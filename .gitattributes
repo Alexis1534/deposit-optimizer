@@ -1,0 +1,6 @@
+# Окончания строк: .bat — Windows (CRLF), .sh — Unix (LF), остальной текст — LF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.sh text eol=lf
+*.db binary
+*.woff2 binary

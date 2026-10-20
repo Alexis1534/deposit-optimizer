@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Распределение средств по вкладам{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <a class="brand" href="{{ url_for('index') }}">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text">Расчёт доходности и распределение средств по вкладам</span>
+      </a>
+      <nav aria-label="Разделы">
+        <a href="{{ url_for('index') }}" {% if request.endpoint != 'help_page' %}aria-current="page"{% endif %}>Расчёт</a>
+        <a href="{{ url_for('help_page') }}" {% if request.endpoint == 'help_page' %}aria-current="page"{% endif %}>Справка</a>
+      </nav>
+    </div>
+  </header>
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="foot">
+    <div class="foot-inner">
+      <p class="foot-cbr">
+        <span>Ключевая ставка ЦБ РФ: <b>{{ fmt_rate(cbr.key_rate_current) }} %</b> на {{ cbr.key_rate_as_of }}</span>
+        {% if cbr.avg_max_rate is not none %}<span>Средняя максимальная ставка топ-10 банков: <b>{{ fmt_rate(cbr.avg_max_rate) }} %</b> ({{ cbr.avg_max_as_of }})</span>{% else %}<span>Средняя максимальная ставка топ-10 банков не получена</span>{% endif %}
+      </p>
+      <p class="foot-note">Результаты носят рекомендательный характер; суммы налога — ориентировочная оценка, а не расчёт налога.</p>
+    </div>
+  </footer>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

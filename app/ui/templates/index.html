@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block content %}
+
+{# ---------- служебные сообщения ---------- #}
+{% if cbr.from_cache %}<p class="msg msg-warn">{{ cbr.message }}</p>{% endif %}
+{% if stale_date %}
+<p class="msg msg-warn">Сведения справочника могли устареть: наиболее ранняя дата актуальности —
+  {{ stale_date.strftime('%d.%m.%Y') }}, это больше 30 дней назад.</p>
+{% endif %}
+{% if catalog.issues %}
+<div class="msg msg-error">
+  <strong>В справочнике найдены некорректные записи — они не используются в расчёте:</strong>
+  <ul>{% for i in catalog.issues %}<li>{{ i.record }}: {{ i.problem }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if errors %}
+<div class="msg msg-error" role="alert">
+  <strong>Расчёт не выполнен — исправьте ошибки ввода:</strong>
+  <ul>{% for key, text in errors.items() %}<li><a href="#f-{{ key }}">{{ field_names[key] }}</a>: {{ text }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% for n in notices %}<p class="msg msg-info">{{ n }}</p>{% endfor %}
+{% if message %}<p class="msg msg-warn">{{ message }}</p>{% endif %}
+
+<div class="layout">
+{# ---------- форма параметров ---------- #}
+<form class="params" method="post" action="{{ url_for('calculate') }}" novalidate>
+  <div class="params-head">
+    <h2>Параметры расчёта</h2>
+    {% if result or state.amount %}<a class="reset-link" href="{{ url_for('index', reset=1) }}">Очистить форму</a>{% endif %}
+  </div>
+
+  <div class="group">
+  <h3 class="group-title">Сумма и срок</h3>
+  <label class="field {% if errors.amount %}has-error{% endif %}" id="f-amount">
+    <span>Сумма размещения, р.</span>
+    <input name="amount" inputmode="numeric" data-group="int" value="{{ state.amount }}" placeholder="от 1 000 до 100 000 000">
+    {% if errors.amount %}<em>{{ errors.amount }}</em>{% endif %}
+  </label>
+
+  <div class="field-row">
+    <div class="field {% if errors.term_from %}has-error{% endif %}" id="f-term_from">
+      <label class="field-label" for="in-term_from">Срок от, мес.</label>
+      <span class="stepper">
+        <button type="button" data-step="-1" data-for="term_from" aria-label="Уменьшить на 1">−</button>
+        <input name="term_from" id="in-term_from" inputmode="numeric" data-min="1" data-max="18" value="{{ state.term_from }}">
+        <button type="button" data-step="1" data-for="term_from" aria-label="Увеличить на 1">+</button>
+      </span>
+      {% if errors.term_from %}<em>{{ errors.term_from }}</em>{% endif %}
+    </div>
+    <div class="field {% if errors.term_to %}has-error{% endif %}" id="f-term_to">
+      <label class="field-label" for="in-term_to">до, мес.</label>
+      <span class="stepper">
+        <button type="button" data-step="-1" data-for="term_to" aria-label="Уменьшить на 1">−</button>
+        <input name="term_to" id="in-term_to" inputmode="numeric" data-min="1" data-max="18" value="{{ state.term_to }}">
+        <button type="button" data-step="1" data-for="term_to" aria-label="Увеличить на 1">+</button>
+      </span>
+      {% if errors.term_to %}<em>{{ errors.term_to }}</em>{% endif %}
+    </div>
+  </div>
+  </div>
+
+  <div class="group">
+  <h3 class="group-title">Банки</h3>
+  <fieldset class="banks {% if errors.banks %}has-error{% endif %}" id="f-banks">
+    <legend>Исключить банки</legend>
+    <small class="banks-hint">Нажмите на банк, чтобы исключить его из расчёта.</small>
+    <p class="banks-count" id="banks-count" aria-live="polite"></p>
+    <div class="bank-actions">
+      <button type="button" data-banks="all">Исключить все</button>
+      <button type="button" data-banks="none">Отменить исключения</button>
+    </div>
+    <div class="bank-list">
+      {% for bank_id, name in catalog.banks %}
+      <label><input type="checkbox" name="exclude" value="{{ bank_id }}" {% if bank_id in state.excluded %}checked{% endif %}> <span class="bank-name">{{ name }}</span><span class="bank-state" aria-hidden="true"></span></label>
+      {% endfor %}
+    </div>
+    {% if errors.banks %}<em>{{ errors.banks }}</em>{% endif %}
+  </fieldset>
+
+  <div class="field {% if errors.max_banks %}has-error{% endif %}" id="f-max_banks">
+    <label class="field-label" for="in-max_banks">Предельное число банков</label>
+    <span class="stepper">
+      <button type="button" data-step="-1" data-for="max_banks" aria-label="Уменьшить на 1">−</button>
+      <input name="max_banks" id="in-max_banks" inputmode="numeric" data-min="1" value="{{ state.max_banks }}" placeholder="все неисключённые">
+      <button type="button" data-step="1" data-for="max_banks" aria-label="Увеличить на 1">+</button>
+    </span>
+    {% if errors.max_banks %}<em>{{ errors.max_banks }}</em>{% endif %}
+  </div>
+  </div>
+
+  <div class="group">
+  <h3 class="group-title">Ограничения на банк</h3>
+
+  <fieldset class="modes" id="f-insurance_mode">
+    <legend>Страховой лимит {{ fmt_money(catalog.insurance_limit) }} р. на банк</legend>
+    {% for mode, title in modes.items() %}
+    <label class="mode"><input type="radio" name="insurance_mode" value="{{ mode|int }}" {% if state.insurance_mode == (mode|int)|string %}checked{% endif %}>
+      <span class="mode-body"><span class="mode-title">{{ title|capitalize }}</span><small class="mode-hint">{{ mode_hints[mode] }}</small></span></label>
+    {% endfor %}
+    {% if errors.insurance_mode %}<em>{{ errors.insurance_mode }}</em>{% endif %}
+  </fieldset>
+
+  <div class="field {% if errors.personal_limit %}has-error{% endif %}" id="f-personal_limit">
+    <label class="check"><input type="checkbox" name="personal_enabled" id="personal_enabled" {% if state.personal_enabled %}checked{% endif %}> Ограничить сумму в один банк</label>
+    <input name="personal_limit" id="personal_limit" inputmode="numeric" data-group="int" value="{{ state.personal_limit }}" placeholder="не меньше 1 000 р." {% if not state.personal_enabled %}disabled{% endif %}>
+    {% if errors.personal_limit %}<em>{{ errors.personal_limit }}</em>{% endif %}
+  </div>
+  </div>
+
+  <div class="group">
+  <h3 class="group-title">Для оценки налога</h3>
+
+  <label class="field {% if errors.other_income %}has-error{% endif %}" id="f-other_income">
+    <span>Проценты, уже полученные в {{ today.year }} году, р. — необязательно</span>
+    <small class="hint">Если в этом году банки уже выплачивали вам проценты по другим вкладам и
+      счетам, можно указать их сумму — так оценка налога будет точнее. Поле можно не заполнять:
+      распределение от него не зависит, но налог тогда может оказаться занижен.</small>
+    <input name="other_income" inputmode="decimal" data-group="money" value="{{ state.other_income }}" placeholder="например, 1 500,50">
+    {% if errors.other_income %}<em>{{ errors.other_income }}</em>{% endif %}
+  </label>
+  </div>
+
+  <button class="primary" type="submit">Рассчитать распределение</button>
+</form>
+
+{# ---------- результат ---------- #}
+<section class="results">
+  {% if result %}
+  <div class="results-head">
+    <h2>Распределение средств</h2>
+    <p class="results-sub">Сумма {{ fmt_money(params.amount) }} р., срок от {{ params.term_from }} до {{ params.term_to }} мес.</p>
+  </div>
+  {% for n in result.notices %}<p class="msg msg-info">{{ n }}</p>{% endfor %}
+  {% if suspicious_positions %}
+  <p class="msg msg-warn">В распределение вошли вклады с нетипично высокой ставкой — выше средней
+    максимальной ставки крупнейших банков ({{ fmt_rate(cbr.avg_max_rate) }} %) более чем на
+    3 процентных пункта:
+    {% for p in suspicious_positions %}«{{ p.deposit.name }}», {{ p.deposit.bank_name }} —
+      {{ fmt_rate(p.deposit.rate) }} %{% if not loop.last %}; {% endif %}{% endfor %}.
+    Перед тем как нести деньги, сверьте условия на сайте банка: сведения могли устареть или быть
+    внесены неверно.</p>
+  {% endif %}
+  <div class="scroll">
+  <table class="data">
+    <thead><tr><th>Банк</th><th>Вклад</th><th class="num">Сумма, р.</th><th class="num">Срок, мес.</th><th class="num">Ставка, %</th><th>Капитализация</th><th class="num">Доход, р.</th></tr></thead>
+    <tbody>
+    {% for p in result.exact.positions %}
+      <tr><td>{{ p.deposit.bank_name }}</td><td>{{ p.deposit.name }}</td><td class="num">{{ fmt_money(p.amount) }}</td>
+          <td class="num">{{ p.deposit.term_months }}</td><td class="num">{% if suspicious(p.deposit.rate) %}<span class="odd-rate"
+              title="Нетипично высокая ставка: выше средней максимальной ставки крупнейших банков более чем на 3 процентных пункта">{{ fmt_rate(p.deposit.rate) }}<span
+              aria-hidden="true"> ⚠</span><span class="sr-only"> — нетипично высокая ставка</span></span>{% else %}{{ fmt_rate(p.deposit.rate) }}{% endif %}</td>
+          <td>{{ 'да' if p.deposit.capitalization else 'нет' }}</td><td class="num">{{ fmt_money(p.income) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <dl class="totals">
+    <div class="key lead"><dt>Доход до налогообложения</dt><dd>{{ fmt_money(result.exact.income) }} р.</dd></div>
+    <div class="key key-tax"><dt>Ориентировочный НДФЛ на данное распределение вкладов<a class="ref" href="#tax-note">*</a></dt><dd>{{ fmt_money(result.tax_total) }} р.</dd></div>
+    <div class="key"><dt>Доход за вычетом НДФЛ<a class="ref" href="#tax-note">*</a></dt><dd>{{ fmt_money(result.income_after_tax) }} р.</dd></div>
+    <div><dt>Застраховано на конец срока (вклады с процентами)</dt><dd>{{ fmt_money(result.insured) }} р.</dd></div>
+    <div><dt>Не застраховано</dt><dd>{{ fmt_money(result.uninsured) }} р.</dd></div>
+    <div class="{% if result.remainder > 0 %}attn{% endif %}{% if result.remainder_reasons %} wide{% endif %}"><dt>Нераспределённый остаток</dt>
+      <dd>{{ fmt_money(result.remainder) }} р.
+        {% if result.remainder_reasons %}<small>Причина: {{ result.remainder_reasons[0] }}.
+          {% if result.remainder_reasons|length > 1 %}Также действует:
+            {% for r in result.remainder_reasons[1:] %}{{ r }}{% if not loop.last %}; {% endif %}{% endfor %}.{% endif %}
+        </small>{% endif %}</dd></div>
+    {% if result.single_best_deposit %}{% set sb = result.single_best_deposit %}
+    {% set fits = result.single_best_amount >= params.amount %}
+    <div class="wide single"><dt>{% if fits %}Всё в один вклад{% else %}Наибольшая сумма в один вклад{% endif %}:
+        «{{ sb.name }}», {{ sb.bank_name }}, {{ sb.term_months }} мес.
+        {% if not fits %}<small class="dt-note">Всю сумму в один вклад разместить нельзя:
+          {%- if result.single_best_limit == 'insurance' %} в одном банке действует страховой лимит,
+          {%- elif result.single_best_limit == 'personal' %} действует ваше ограничение суммы в один банк,
+          {%- else %} у вклада есть максимальная сумма,{% endif %} поэтому в него помещается
+          {{ fmt_money(result.single_best_amount) }} р., а остальные
+          {{ fmt_money(params.amount - result.single_best_amount) }} р. остались бы неразмещёнными.</small>{% endif %}</dt>
+      <dd>{{ fmt_money(result.single_best_income) }} р.
+        <small>{% if result.single_best_diff > 0 %}{% if fits %}распределение даёт{% else %}распределение размещает {{ fmt_money(result.exact.placed) }} р. и даёт{% endif %} на {{ fmt_money(result.single_best_diff) }} р. больше
+          {%- elif result.single_best_diff == 0 %}столько же, сколько распределение: лучший вариант — этот один вклад
+          {%- else %}на {{ fmt_money(-result.single_best_diff) }} р. больше распределения (погрешность шага дискретизации){% endif %}</small></dd></div>
+    {% endif %}
+    <div><dt>Использовано банков</dt><dd>{{ result.exact.banks_used }} из {{ result.max_banks }}</dd></div>
+    {% if result.k_plus_one_gain is not none %}
+    <div><dt>Прирост дохода при {{ result.max_banks + 1 }} банках</dt><dd>{{ fmt_money(result.k_plus_one_gain) }} р.</dd></div>
+    {% endif %}
+  </dl>
+
+  <details class="tech">
+    <summary>Технические сведения о расчёте</summary>
+    <dl class="totals">
+      <div><dt>Отклонение результата приближённого метода от точного</dt><dd>{{ fmt_money(result.deviation_rub) }} р. ({{ fmt_rate(result.deviation_pct) }} %)</dd></div>
+      <div><dt>Время решения: точный / приближённый метод</dt><dd>{{ '%.1f'|format(result.exact.time_ms) }} / {{ '%.1f'|format(result.approx.time_ms) }} мс</dd></div>
+      <div><dt>Шаг дискретизации</dt><dd>{{ fmt_money(result.step) }} р.</dd></div>
+    </dl>
+  </details>
+
+  <details class="tax" id="tax-note">
+    <summary>НДФЛ по годам — ориентировочная оценка, не расчёт налога</summary>
+    <p class="msg msg-warn"><strong>Это ориентир, а не ваш налог.</strong> Система не выполняет функции
+      налогового агента и не гарантирует совпадение с начислением; величину налога определяет налоговый орган.<br>
+      <strong>Как считаем:</strong> необлагаемая сумма — 1&#160;000&#160;000&#160;р. × наибольшая ключевая ставка
+      на 1-е число месяца по значениям, известным на дату расчёта;
+      ставка 13&#160;%, с части базы свыше 2&#160;400&#160;000&#160;р. — 15&#160;%; проценты вкладов с
+      капитализацией отнесены к годам начисления, без капитализации — к году окончания срока;
+      для вкладов без капитализации дольше 15&#160;месяцев учтён перенос неиспользованных
+      необлагаемых сумм всех лет срока; показан НДФЛ, приходящийся на доход по этим вкладам, а не весь налог за год.<br>
+      <strong>Не учитываем:</strong> ваш налоговый статус; иные доходы и налоговые вычеты; доходы от
+      дивидендов, продажи имущества и ценных бумаг, цифровой валюты — они тоже входят в порог
+      2&#160;400&#160;000&#160;р.; счета, открытые совместно или на детей; фактические даты выплаты процентов;
+      досрочное расторжение; последующие изменения законодательства и ключевой ставки.</p>
+    {# годы — в столбцах, показатели — в строках: лет не больше трёх, таблица всегда
+       помещается в ширину страницы #}
+    <table class="data tax-table">
+      <thead><tr><th>Показатель, р.</th>{% for t in result.tax_years %}<th class="num">{{ t.year }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        <tr><th scope="row">Доход по вкладам</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.deposit_income) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Ранее полученные проценты</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.other_income) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Необлагаемая сумма</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.non_taxable) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Перенос прошлых лет</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.carried) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Налоговая база</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money([t.base, 0]|max) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Ставка</th>{% for t in result.tax_years %}<td class="num">{{ t.scale }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Налог без вкладов</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax_without) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Налог с вкладами</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax_full) }}</td>{% endfor %}</tr>
+        <tr class="total"><th scope="row">НДФЛ на данное распределение (оценка)</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax) }}</td>{% endfor %}</tr>
+      </tbody>
+    </table>
+  </details>
+
+  <p class="save"><a class="button" href="{{ url_for('save') }}">Сохранить результат в файл</a></p>
+  {% else %}
+  <div class="empty">
+    <h2>Здесь появится распределение</h2>
+    <p>Система подберёт вклады, дающие наибольший доход с учётом страхового лимита и числа банков.</p>
+    <ol class="empty-steps">
+      <li>Укажите сумму и границы срока.</li>
+      <li>При необходимости исключите банки и задайте ограничения.</li>
+      <li>Нажмите «Рассчитать распределение».</li>
+    </ol>
+  </div>
+  {% endif %}
+</section>
+</div>
+
+{# ---------- справочник ---------- #}
+<section class="catalog">
+  <div class="catalog-head">
+    <h2>Справочник вкладов</h2>
+    <p>Банков: {{ bank_count }}, вкладов: {{ deposit_count }}.</p>
+    <label class="filter">Банк: <input type="search" id="bank-filter" placeholder="часть названия"></label>
+  </div>
+  {# справочник прокручивается внутри рамки, шапка столбцов закреплена: длина страницы
+     не зависит от числа вкладов #}
+  <div class="catalog-frame" tabindex="0" role="region" aria-label="Справочник вкладов, прокручиваемая область">
+  <table class="data sortable" id="catalog">
+    <thead><tr>
+      <th data-type="text">Банк</th><th data-type="text">Вклад</th><th data-type="num" class="num">Ставка, %</th>
+      <th data-type="num" class="num">Срок, мес.</th><th data-type="num" class="num">Мин. сумма, р.</th>
+      <th data-type="num" class="num">Макс. сумма, р.</th><th data-type="text">Капитализация</th><th data-type="date">Актуально на</th>
+    </tr></thead>
+    <tbody>
+    {% for d in catalog.deposits %}
+      <tr>
+        <td>{{ d.bank_name }}</td>
+        <td>{{ d.name }}</td>
+        <td class="num" data-v="{{ d.rate }}">{% if suspicious(d.rate) %}<span class="odd-rate"
+            title="Нетипично высокая ставка: выше средней максимальной ставки крупнейших банков более чем на 3 процентных пункта">{{ fmt_rate(d.rate) }}<span
+            aria-hidden="true"> ⚠</span><span class="sr-only"> — нетипично высокая ставка</span></span>{% else %}{{ fmt_rate(d.rate) }}{% endif %}</td>
+        <td class="num" data-v="{{ d.term_months }}">{{ d.term_months }}</td>
+        <td class="num" data-v="{{ d.min_sum }}">{{ fmt_money(d.min_sum) }}</td>
+        <td class="num" data-v="{{ d.max_sum if d.max_sum is not none else 1e15 }}">{{ fmt_money(d.max_sum) if d.max_sum is not none else 'без ограничения' }}</td>
+        <td>{{ 'да' if d.capitalization else 'нет' }}</td>
+        <td data-v="{{ d.actual_date.isoformat() }}">{{ d.actual_date.strftime('%d.%m.%Y') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if cbr.avg_max_rate is not none %}
+  <p class="legend"><span class="odd-rate" aria-hidden="true">⚠</span> — нетипично высокая ставка:
+    она выше средней максимальной ставки крупнейших банков ({{ fmt_rate(cbr.avg_max_rate) }} %)
+    более чем на 3 процентных пункта. Такой вклад не обязательно плох, но условия стоит сверить на
+    сайте банка: сведения могли устареть или быть внесены неверно.</p>
+  {% endif %}
+</section>
+{% endblock %}

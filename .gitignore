@@ -1,0 +1,24 @@
+# Виртуальное окружение (создаётся средством запуска)
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Справочники, созданные tools/generate_catalog.py, и временные файлы SQLite
+database/catalog_*.db
+database/*.db-journal
+database/*.db-wal
+database/*.db-shm
+
+# Сохранённые результаты расчёта
+raschet_*.txt
+
+# Среды разработки и ОС
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
