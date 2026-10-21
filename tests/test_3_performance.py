@@ -16,8 +16,8 @@ def measure(n, banks, amount, mode=InsuranceMode.PRINCIPAL, personal=None, K=99)
     r = optimize(synthetic(n, banks), params(amount, mode, K=min(K, banks), personal=personal), CBR, 1_400_000)
     total = (time.perf_counter() - t) * 1000
     print(f"\n    {n} вкладов, {amount:,} р., режим {mode.value}, K={min(K, banks)}, личн.={personal}: "
-          f"всего {total:.0f} мс; точный {r.exact.time_ms:.0f} мс, приближённый {r.approx.time_ms:.2f} мс; "
-          f"шаг {r.step} (увеличен: {r.step_increased}); отклонение {r.deviation_rub} р. ({r.deviation_pct} %)")
+          f"всего {total:.0f} мс; шаг {r.step} (увеличен: {r.step_increased}); "
+          f"точный − приближённый: {r.exact.income - r.approx.income} р.")
     return r, total
 
 
@@ -37,7 +37,7 @@ class Performance(unittest.TestCase):
     def test_3_personal_limit_near_amount(self):
         r, total = measure(500, 50, 100_000_000, InsuranceMode.NONE, personal=99_000_000)
         self.assertTrue(r.step_increased)
-        self.assertTrue(any("округлены с точностью до" in n for n in r.notices))
+        self.assertTrue(any("округлены до" in n for n in r.notices))
         self.assertLess(total, 2000)
 
 
@@ -78,9 +78,8 @@ class LargeCatalog(unittest.TestCase):
         r = optimize(selected, p, CBR, 1_400_000)
         total = (time.perf_counter() - started) * 1000
         print(f"\n    {rows} вкладов ({len(selected)} отобрано, {banks} банков), режим {mode.value}, "
-              f"K={p.max_banks}, {amount:,} р.: всего {total:.0f} мс; точный {r.exact.time_ms:.0f} мс, "
-              f"приближённый {r.approx.time_ms:.2f} мс; шаг {r.step:,} "
-              f"(увеличен: {r.step_increased}); отклонение {r.deviation_pct} %")
+              f"K={p.max_banks}, {amount:,} р.: всего {total:.0f} мс; шаг {r.step:,} "
+              f"(увеличен: {r.step_increased}); точный − приближённый: {r.exact.income - r.approx.income} р.")
         self.assertLess(total, 2000)
         return r, total
 

@@ -3,13 +3,12 @@
 Порядок расчёта:
   1. коэффициенты доходности всех отобранных вкладов — вызов подсистемы расчёта (один раз);
   2. шаг дискретизации и оценка объёма; при превышении — укрупнение шага (п. 4.1.2.11);
-  3. точный метод (ДП), затем приближённый (жадный);
+  3. точный метод (ДП) и контроль его результата по приближённому (жадному) методу;
   4. выбранное распределение → подсистема расчёта: доходы позиций, НДФЛ, застрахованная часть;
-  5. сравнение методов, доход в один вклад, прирост при K+1, причина остатка.
+  5. доход в один вклад, прирост при K+1, причина остатка.
 Все данные приходят параметрами; модуль не хранит состояния.
 """
 import math
-import time
 from decimal import Decimal
 from typing import Dict, List
 
@@ -73,11 +72,11 @@ def _cells_to_rub(allocation, h):
     return [(item.deposit, cells * h) for item, cells in allocation]
 
 
-def _method_result(allocation, h, coefs, start, time_ms, banks_used) -> MethodResult:
+def _method_result(allocation, h, coefs, start, banks_used) -> MethodResult:
     positions = calc.build_positions(_cells_to_rub(allocation, h), coefs, start)
     income = sum((p.income for p in positions), Decimal("0"))
     placed = sum(p.amount for p in positions)
-    return MethodResult(positions, income, placed, time_ms, banks_used)
+    return MethodResult(positions, income, placed, banks_used)
 
 
 def _single_best(deposits, coefs, params, insurance_limit):
@@ -94,9 +93,8 @@ def _single_best(deposits, coefs, params, insurance_limit):
             amount, limit = d.max_sum, "max_sum"
         cap = bank_principal_cap_rub(params.insurance_mode, insurance_limit, params.personal_limit)
         if cap is not None and cap < amount:
-            by_personal = params.personal_limit is not None and cap == params.personal_limit
-            amount, limit = cap, ("personal" if by_personal else "insurance")
-        if params.insurance_mode == InsuranceMode.WITH_INTEREST:
+            amount, limit = cap, ("insurance" if params.personal_limit is None else "personal")
+        if params.personal_limit is None and params.insurance_mode == InsuranceMode.WITH_INTEREST:
             with_interest_cap = int(insurance_limit / (1.0 + coefs[d.deposit_id]))
             if with_interest_cap < amount:
                 amount, limit = with_interest_cap, "insurance"
@@ -168,33 +166,31 @@ def optimize(deposits: List[Deposit], params: CalcParams, cbr: CbrInfo,
     coefs: Dict[int, float] = calc.coefficients(deposits, start)
 
     # 2–3. шаг и точный метод
-    t0 = time.perf_counter()
     grid, bfs, increased = _prepare(deposits, coefs, params, insurance_limit, params.max_banks)
     h = grid.step
     K = min(params.max_banks, len(bfs))
     exact = exact_dp.solve(bfs, grid.cells, K)
-    t_exact = (time.perf_counter() - t0) * 1000
-
-    t1 = time.perf_counter()
     approx = greedy.solve(grid, K)
-    t_approx = (time.perf_counter() - t1) * 1000
 
     if increased:
-        notices.append(f"Объём вычислений превышает допустимый для отведённого времени расчёта: "
-                       f"суммы распределения округлены с точностью до {h:,} р. — "
-                       f"применённого шага дискретизации.".replace(",", " "))
+        # п. 4.1.2.11: суммы округлены с точностью до применённого шага дискретизации
+        step = f"{h:,}".replace(",", " ")
+        notices.append(f"Суммы в распределении округлены до {step} р., чтобы расчёт выполнился "
+                       f"быстро. Это не ошибка и ничего делать не нужно: сумма в каждом вкладе "
+                       f"может отличаться от наилучшей не больше чем на {step} р.")
     # 4. оценка распределений подсистемой расчёта
-    exact_res = _method_result(exact.allocation, h, coefs, start, t_exact, exact.banks_used)
-    approx_res = _method_result(approx.allocation, h, coefs, start, t_approx, approx.banks_used)
+    exact_res = _method_result(exact.allocation, h, coefs, start, exact.banks_used)
+    approx_res = _method_result(approx.allocation, h, coefs, start, approx.banks_used)
+    # контроль: результат точного метода не должен уступать приближённому (п. 4.1.1.4);
+    # уступить он может только в режиме «по сумме с процентами» у банка с большим числом
+    # вкладов (п. 4.1.2.14) — тогда принимается распределение приближённого метода
+    if approx_res.income > exact_res.income:
+        exact, exact_res = approx, approx_res
     tax_years, tax_total = calc.compute_tax(exact_res.positions, params.other_income, start,
                                             cbr.key_rate_current, cbr.key_rate_year_max)
     insured, uninsured = calc.insured_split(exact_res.positions, insurance_limit)
 
-    # 5. сравнение и дополнительные показатели
-    deviation = exact_res.income - approx_res.income
-    deviation_pct = (deviation / exact_res.income * 100).quantize(Decimal("0.01")) \
-        if exact_res.income > 0 else Decimal("0.00")
-
+    # 5. дополнительные показатели
     best_dep, best_amount, best_income, best_limit = _single_best(deposits, coefs, params,
                                                                   insurance_limit)
 
@@ -204,7 +200,7 @@ def optimize(deposits: List[Deposit], params: CalcParams, cbr: CbrInfo,
     not_excluded = params.available_banks or len(bfs)
     if exact.banks_used >= K and params.max_banks < not_excluded:
         more = exact_dp.solve(bfs, grid.cells, K + 1)
-        more_res = _method_result(more.allocation, h, coefs, start, 0, more.banks_used)
+        more_res = _method_result(more.allocation, h, coefs, start, more.banks_used)
         k_gain = more_res.income - exact_res.income
 
     remainder = params.amount - exact_res.placed
@@ -219,6 +215,6 @@ def optimize(deposits: List[Deposit], params: CalcParams, cbr: CbrInfo,
         single_best_deposit=best_dep, single_best_amount=best_amount,
         single_best_income=best_income, single_best_diff=exact_res.income - best_income,
         max_banks=params.max_banks, available_banks=len(bfs),
-        deviation_rub=deviation, deviation_pct=deviation_pct, k_plus_one_gain=k_gain,
+        k_plus_one_gain=k_gain,
         step=h, step_increased=increased, effective_amount=grid.effective_amount,
         notices=notices, single_best_limit=best_limit)

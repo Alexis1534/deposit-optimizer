@@ -50,21 +50,39 @@ class ValidationResult:
     notices: List[str] = field(default_factory=list)
 
 
+_NUMBER_RE = re.compile(r"([\d \u00a0]+)([.,]\d*)?")
+
+
+def _without_leading_zeros(raw: str) -> str:
+    """Убирает незначащие нули в начале числа: «007» → «7», «0 001 000» → «1 000», «00,50» → «0,50».
+
+    Значение, не похожее на число, возвращается без изменений: его отметит проверка.
+    """
+    m = _NUMBER_RE.fullmatch(raw)
+    if not m:
+        return raw
+    digits = re.sub(r"[ \u00a0]", "", m.group(1)).lstrip("0") or "0"
+    grouped = re.sub(r"\B(?=(\d{3})+(?!\d))", " ", digits)
+    return grouped + (m.group(2) or "")
+
+
 def form_from_request(form) -> FormState:
     excluded = set()
     for v in form.getlist("exclude"):
         if v.isdigit():
             excluded.add(int(v))
     return FormState(
-        amount=form.get("amount", "").strip(),
-        term_from=form.get("term_from", "").strip(),
-        term_to=form.get("term_to", "").strip(),
+        amount=_without_leading_zeros(form.get("amount", "").strip()),
+        term_from=_without_leading_zeros(form.get("term_from", "").strip()),
+        term_to=_without_leading_zeros(form.get("term_to", "").strip()),
         excluded=frozenset(excluded),
-        max_banks=form.get("max_banks", "").strip(),
-        insurance_mode=form.get("insurance_mode", "").strip(),
+        max_banks=_without_leading_zeros(form.get("max_banks", "").strip()),
+        # при отмеченной предельной сумме в один банк выбор режима недоступен (п. 4.6.2.4),
+        # и ранее выбранный режим приходит скрытым полем, чтобы восстановить его при снятии признака
+        insurance_mode=(form.get("insurance_mode") or form.get("insurance_mode_saved", "")).strip(),
         personal_enabled=form.get("personal_enabled") == "on",
-        personal_limit=form.get("personal_limit", "").strip(),
-        other_income=form.get("other_income", "").strip(),
+        personal_limit=_without_leading_zeros(form.get("personal_limit", "").strip()),
+        other_income=_without_leading_zeros(form.get("other_income", "").strip()),
     )
 
 
@@ -124,6 +142,8 @@ def validate(state: FormState, all_bank_ids: List[int], today: date) -> Validati
     mode = None
     if state.insurance_mode in {str(int(m)) for m in InsuranceMode}:
         mode = InsuranceMode(int(state.insurance_mode))
+    elif state.personal_enabled:
+        mode = InsuranceMode.PRINCIPAL      # режимы не применяются (п. 4.1.2.8)
     else:
         errors["insurance_mode"] = "режим не выбран"
 

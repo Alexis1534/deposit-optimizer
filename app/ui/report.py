@@ -52,7 +52,9 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
         f"  Исключённые банки: {', '.join(bank_names[b] for b in sorted(params.excluded_bank_ids)) or 'нет'}",
         f"  Предельное число банков: {params.max_banks}",
         f"  Учёт предельного размера страхового возмещения ({sp(money(insurance_limit))} р.): "
-        f"{MODE_TITLES[params.insurance_mode]} — {MODE_HINTS[params.insurance_mode]}",
+        + (f"{MODE_TITLES[params.insurance_mode]} — {MODE_HINTS[params.insurance_mode]}"
+           if params.personal_limit is None else
+           "не применяется — задана предельная сумма в один банк"),
         f"  Предельная сумма в один банк: "
         f"{sp(money(params.personal_limit)) + ' р.' if params.personal_limit else 'не задана'}",
         f"  Проценты, уже полученные в этом году по другим вкладам и счетам: "
@@ -144,13 +146,4 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
     ]
     for n in result.notices:
         lines.append("Примечание: " + n)
-    lines += [
-        "",
-        "ТЕХНИЧЕСКИЕ СВЕДЕНИЯ О РАСЧЁТЕ",
-        f"  Отклонение результата приближённого метода от точного: "
-        f"{sp(money(result.deviation_rub))} р. ({rate(result.deviation_pct)} %)",
-        f"  Время решения: точный метод {result.exact.time_ms:.1f} мс, "
-        f"приближённый метод {result.approx.time_ms:.1f} мс",
-        f"  Шаг дискретизации: {sp(money(result.step))} р.",
-    ]
     return "\n".join(lines) + "\n"

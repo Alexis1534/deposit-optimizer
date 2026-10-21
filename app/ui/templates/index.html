@@ -92,12 +92,14 @@
   <div class="group">
   <h3 class="group-title">Ограничения на банк</h3>
 
-  <fieldset class="modes" id="f-insurance_mode">
+  <input type="hidden" name="insurance_mode_saved" id="insurance_mode_saved" value="{{ state.insurance_mode }}">
+  <fieldset class="modes{% if state.personal_enabled %} is-off{% endif %}" id="f-insurance_mode" {% if state.personal_enabled %}disabled{% endif %}>
     <legend>Страховой лимит {{ fmt_money(catalog.insurance_limit) }} р. на банк</legend>
     {% for mode, title in modes.items() %}
-    <label class="mode"><input type="radio" name="insurance_mode" value="{{ mode|int }}" {% if state.insurance_mode == (mode|int)|string %}checked{% endif %}>
+    <label class="mode"><input type="radio" name="insurance_mode" value="{{ mode|int }}" {% if not state.personal_enabled and state.insurance_mode == (mode|int)|string %}checked{% endif %}>
       <span class="mode-body"><span class="mode-title">{{ title|capitalize }}</span><small class="mode-hint">{{ mode_hints[mode] }}</small></span></label>
     {% endfor %}
+    <p class="modes-off-note">Не применяется: задана предельная сумма в один банк. Снимите отметку ниже, чтобы вернуться к учёту страхового лимита.</p>
     {% if errors.insurance_mode %}<em>{{ errors.insurance_mode }}</em>{% endif %}
   </fieldset>
 
@@ -131,7 +133,7 @@
     <h2>Распределение средств</h2>
     <p class="results-sub">Сумма {{ fmt_money(params.amount) }} р., срок от {{ params.term_from }} до {{ params.term_to }} мес.</p>
   </div>
-  {% for n in result.notices %}<p class="msg msg-info">{{ n }}</p>{% endfor %}
+  {% for n in result.notices %}<p class="msg msg-info">{{ n }}{% if result.step_increased %} <a href="{{ url_for('help_page') }}#precision">Подробнее</a>{% endif %}</p>{% endfor %}
   {% if suspicious_positions %}
   <p class="msg msg-warn">В распределение вошли вклады с нетипично высокой ставкой — выше средней
     максимальной ставки крупнейших банков ({{ fmt_rate(cbr.avg_max_rate) }} %) более чем на
@@ -188,15 +190,6 @@
     <div><dt>Прирост дохода при {{ result.max_banks + 1 }} банках</dt><dd>{{ fmt_money(result.k_plus_one_gain) }} р.</dd></div>
     {% endif %}
   </dl>
-
-  <details class="tech">
-    <summary>Технические сведения о расчёте</summary>
-    <dl class="totals">
-      <div><dt>Отклонение результата приближённого метода от точного</dt><dd>{{ fmt_money(result.deviation_rub) }} р. ({{ fmt_rate(result.deviation_pct) }} %)</dd></div>
-      <div><dt>Время решения: точный / приближённый метод</dt><dd>{{ '%.1f'|format(result.exact.time_ms) }} / {{ '%.1f'|format(result.approx.time_ms) }} мс</dd></div>
-      <div><dt>Шаг дискретизации</dt><dd>{{ fmt_money(result.step) }} р.</dd></div>
-    </dl>
-  </details>
 
   <details class="tax" id="tax-note">
     <summary>НДФЛ по годам — ориентировочная оценка, не расчёт налога</summary>

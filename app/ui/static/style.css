@@ -170,6 +170,10 @@ legend { padding: 0; }
 .mode-title { display: block; font-weight: 500; }
 .mode-hint { display: block; color: var(--muted); font-size: .8rem; line-height: 1.35; }
 .mode:has(input:checked) { border-color: var(--cobalt); background: #f6f7ff; }
+.modes-off-note { display: none; margin: 2px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.35; }
+.modes.is-off .mode { opacity: .45; cursor: not-allowed; background: #f6f7fa; border-color: var(--line); }
+.modes.is-off .mode:hover { border-color: var(--line); }
+.modes.is-off .modes-off-note { display: block; }
 .check { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; cursor: pointer; }
 .check input { width: 17px; height: 17px; accent-color: var(--cobalt); }
 
@@ -234,8 +238,6 @@ details > summary::before { content: ""; width: 7px; height: 7px; border-right: 
   transform: rotate(-45deg); transition: transform .15s; flex: none; }
 details[open] > summary::before { transform: rotate(45deg); }
 details > summary:hover { color: var(--cobalt); }
-details > .totals { margin: 0 18px 12px; }
-details > .totals > div { grid-column: 1 / -1; }
 details > .msg { margin: 0 18px 12px; }
 details > table.data { margin: 0 18px 16px; width: calc(100% - 36px); background: #fff; border-radius: 12px; overflow: hidden; }
 .tax-table tbody th { font-size: inherit; font-weight: 400; color: var(--ink); background: none; text-align: left; white-space: normal; }

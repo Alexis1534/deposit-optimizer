@@ -49,29 +49,30 @@ def base_step(deposits: List[Deposit]) -> int:
 
 def bank_principal_cap_rub(mode: InsuranceMode, insurance_limit: int,
                            personal_limit: Optional[int]) -> Optional[int]:
-    """Предел вложенной суммы в один банк: меньшее из действующих ограничений (п. 4.1.2.8).
+    """Предел вложенной суммы в один банк.
 
-    Все банки справочника — участники ССВ (иначе запись отвергается при контроле
-    целостности), поэтому страховой лимит действует на любой банк. В режиме 3 он
-    ограничивает сумму вместе с процентами и учитывается отдельно (bound_rub),
-    здесь остаётся только личное ограничение.
+    Заданная пользователем предельная сумма заменяет учёт страхового лимита (п. 4.1.2.8).
+    Без неё действует выбранный режим (п. 4.1.2.7); в режиме «по сумме с процентами»
+    лимит ограничивает сумму вместе с процентами и учитывается отдельно (bound_rub).
     """
-    caps = []
     if personal_limit is not None:
-        caps.append(personal_limit)
+        return personal_limit
     if mode == InsuranceMode.PRINCIPAL:
-        caps.append(insurance_limit)
-    return min(caps) if caps else None
+        return insurance_limit
+    return None
 
 
 def effective_amount(amount: int, deposits: List[Deposit], mode: InsuranceMode,
-                     insurance_limit: int) -> int:
-    """S_эфф = min(S, Σ максимумов, лимит × число доступных банков)."""
+                     insurance_limit: int, personal_limit: Optional[int] = None) -> int:
+    """S_эфф = min(S, Σ максимумов, предел на банк × число доступных банков)."""
     s = amount
     if all(d.max_sum is not None for d in deposits):
         s = min(s, sum(d.max_sum for d in deposits))
-    if mode != InsuranceMode.NONE:
-        s = min(s, insurance_limit * len({d.bank_id for d in deposits}))
+    banks = len({d.bank_id for d in deposits})
+    if personal_limit is not None:
+        s = min(s, personal_limit * banks)
+    elif mode != InsuranceMode.NONE:
+        s = min(s, insurance_limit * banks)
     return s
 
 
@@ -79,7 +80,7 @@ def build_grid(deposits: List[Deposit], coefs: Dict[int, float], amount: int, st
                mode: InsuranceMode, insurance_limit: int,
                personal_limit: Optional[int]) -> Grid:
     """Строит дискретную задачу с шагом step; вклады группируются по банкам."""
-    s_eff = effective_amount(amount, deposits, mode, insurance_limit)
+    s_eff = effective_amount(amount, deposits, mode, insurance_limit, personal_limit)
     M = s_eff // step
     grouped: "OrderedDict[int, List[Deposit]]" = OrderedDict()
     for d in sorted(deposits, key=lambda x: (x.bank_id, x.deposit_id)):
@@ -89,7 +90,8 @@ def build_grid(deposits: List[Deposit], coefs: Dict[int, float], amount: int, st
     for bank_id, deps in grouped.items():
         cap_rub = bank_principal_cap_rub(mode, insurance_limit, personal_limit)
         cap_cells = M if cap_rub is None else min(M, cap_rub // step)
-        bound = float(insurance_limit) if mode == InsuranceMode.WITH_INTEREST else None
+        with_interest = mode == InsuranceMode.WITH_INTEREST and personal_limit is None
+        bound = float(insurance_limit) if with_interest else None
         if bound is not None:
             cap_cells = min(cap_cells, int(bound // step))
         items = []

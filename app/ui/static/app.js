@@ -10,11 +10,26 @@
   });
 
   // --- поле предельной суммы в один банк доступно только при отмеченном признаке (п. 4.6.2.5)
+  //     при отмеченном признаке выбор режима страхового лимита недоступен и ни один режим
+  //     не отмечен; при снятии признака восстанавливается ранее выбранный режим (п. 4.6.2.4)
   var flag = document.getElementById("personal_enabled");
   var limit = document.getElementById("personal_limit");
+  var modes = document.getElementById("f-insurance_mode");
+  var saved = document.getElementById("insurance_mode_saved");
   if (flag && limit) {
+    var radios = modes ? modes.querySelectorAll('input[name="insurance_mode"]') : [];
+    radios.forEach(function (r) {
+      r.addEventListener("change", function () { if (r.checked && saved) saved.value = r.value; });
+    });
     flag.addEventListener("change", function () {
       limit.disabled = !flag.checked;
+      if (modes) {
+        modes.disabled = flag.checked;
+        modes.classList.toggle("is-off", flag.checked);
+        radios.forEach(function (r) {
+          r.checked = !flag.checked && saved && r.value === saved.value;
+        });
+      }
       if (flag.checked) limit.focus();
     });
   }
@@ -117,7 +132,7 @@
                  exclude: ["banks", "max_banks"], personal_enabled: ["personal_limit"] };
 
 
-    // --- разделение разрядов в полях денежных сумм (п. 4.6.2.13); пробелы между разрядами
+    // --- разделение разрядов в полях денежных сумм (п. 4.6.2.12); пробелы между разрядами
     //     сервер при проверке убирает
     function groupInteger(digits) {
       return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ");

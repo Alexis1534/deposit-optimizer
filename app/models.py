@@ -85,7 +85,6 @@ class MethodResult:
     positions: List[Position]
     income: Decimal
     placed: int
-    time_ms: float
     banks_used: int
 
 
@@ -123,8 +122,6 @@ class CalcResult:
     single_best_diff: Decimal               # доход распределения − доход в один вклад
     max_banks: int
     available_banks: int
-    deviation_rub: Decimal
-    deviation_pct: Decimal
     k_plus_one_gain: Optional[Decimal]      # только при использовании всех K банков
     step: int
     step_increased: bool
