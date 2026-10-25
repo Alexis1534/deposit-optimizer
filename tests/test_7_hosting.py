@@ -90,5 +90,17 @@ class DateRollover(unittest.TestCase):
         self.assertEqual(calls, [date(2026, 9, 16), date(2026, 9, 17)])
 
 
+class MoscowTime(unittest.TestCase):
+    """Дата расчёта и время формирования файла — по Москве, а не по часам сервера (UTC)."""
+
+    def test_offset_is_moscow(self):
+        from app import clock
+        self.assertEqual(clock.now().utcoffset(), timedelta(hours=3))
+
+    def test_default_calc_date_is_moscow(self):
+        from app import clock
+        self.assertIs(create_app.__defaults__[1], clock.today)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

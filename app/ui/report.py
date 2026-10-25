@@ -1,7 +1,7 @@
 """Форматирование величин (п. 4.1.3.7) и текстовый отчёт для сохранения (п. 4.5.4)."""
-from datetime import datetime
 from decimal import Decimal
 
+from app import clock
 from app.data_management.repository import is_suspicious
 from app.models import CalcParams, CalcResult, InsuranceMode
 
@@ -43,7 +43,7 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
     lines = [
         "Программная система расчёта доходности и оптимизации распределения средств",
         "по банковским вкладам — результаты расчёта",
-        f"Дата расчёта: {params.calc_date:%d.%m.%Y}; сформировано {datetime.now():%d.%m.%Y %H:%M}",
+        f"Дата расчёта: {params.calc_date:%d.%m.%Y}; сформировано {clock.now():%d.%m.%Y %H:%M}",
         "Результаты носят рекомендательный характер.",
         "",
         "ПАРАМЕТРЫ",

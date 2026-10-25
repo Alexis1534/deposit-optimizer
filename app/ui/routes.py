@@ -14,11 +14,12 @@ import secrets
 import threading
 import time
 from collections import OrderedDict, defaultdict, deque
-from datetime import date, timedelta
+from datetime import timedelta
 
 from flask import Flask, make_response, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from app import clock
 from app.data_management import repository
 from app.data_management.repository import is_suspicious
 from app.external_sources import cbr_client
@@ -71,7 +72,7 @@ class SessionStore:
             self.items.pop(token, None)
 
 
-def create_app(db_path: str, online: bool = True, today_fn=date.today,
+def create_app(db_path: str, online: bool = True, today_fn=clock.today,
                public: bool = False) -> Flask:
     app = Flask(__name__)
     if public:      # адрес посетителя и протокол — из заголовков прокси хостинга

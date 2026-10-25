@@ -12,9 +12,10 @@
 import re
 import sqlite3
 import urllib.request
-from datetime import date, datetime
+from datetime import date
 from typing import Optional, Tuple
 
+from app import clock
 from app.models import CbrInfo
 
 SOAP_URL = "https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx"
@@ -110,7 +111,7 @@ def _read_cache(db_path: str) -> CbrInfo:
 
 
 def _write_cache(db_path: str, info: CbrInfo, today: date, key_rate_fresh: bool, avg_fresh: bool):
-    stamp = datetime.now().isoformat(timespec="seconds")
+    stamp = clock.now().isoformat(timespec="seconds")
     con = sqlite3.connect(db_path)
     try:
         with con:   # одна транзакция: при сбое кеш остаётся прежним (п. 4.2.6)
