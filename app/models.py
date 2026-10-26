@@ -116,10 +116,13 @@ class CalcResult:
     uninsured: Decimal
     remainder: int
     remainder_reasons: List[str]            # от старшей причины к младшей; пусто — остатка нет
-    single_best_deposit: Optional[Deposit]
-    single_best_amount: int
+    single_best_deposit: Optional[Deposit]  # вклад, принимающий всю сумму; None — такого нет
     single_best_income: Decimal
     single_best_diff: Decimal               # доход распределения − доход в один вклад
+    single_best_insured: Decimal            # вклад с процентами в пределах страхового лимита
+    single_best_uninsured: Decimal
+    single_best_breaks_limits: bool         # превышает лимит или предельную сумму в один банк
+    single_widest_deposit: Optional[Deposit]  # наибольшая максимальная сумма, если вклада нет
     max_banks: int
     available_banks: int
     k_plus_one_gain: Optional[Decimal]      # только при использовании всех K банков
@@ -127,6 +130,5 @@ class CalcResult:
     step_increased: bool
     effective_amount: int
     notices: List[str] = field(default_factory=list)
-    # почему в один вклад помещается не вся сумма: «max_sum» — максимальная сумма вклада,
-    # «insurance» — страховой лимит, «personal» — предельная сумма в один банк; None — помещается вся
-    single_best_limit: Optional[str] = None
+    # что пользователь может изменить, чтобы уменьшить нераспределённый остаток
+    remainder_tips: List[str] = field(default_factory=list)

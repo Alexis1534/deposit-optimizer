@@ -144,6 +144,7 @@ def create_app(db_path: str, online: bool = True, today_fn=clock.today,
             field_names=validation.FIELD_NAMES, notices=notices or [], result=result,
             params=params, message=message, stale_date=stale, today=today,
             modes=MODE_TITLES, mode_hints=MODE_HINTS, fmt_money=report.money, fmt_rate=report.rate,
+            single_summary=report.single_deposit_summary,
             suspicious=lambda r: is_suspicious(r, cbr.avg_max_rate),
             suspicious_positions=[p for p in (result.exact.positions if result else [])
                                   if is_suspicious(p.deposit.rate, cbr.avg_max_rate)],

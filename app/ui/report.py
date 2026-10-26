@@ -35,10 +35,45 @@ def rate(value) -> str:
     return f"{float(value):.2f}".replace(".", ",")
 
 
+def single_deposit_summary(result: CalcResult, params: CalcParams, insurance_limit: int) -> dict:
+    """Показатель «Если положить всё на один вклад» (п. 4.1.2.13) — общий для страницы и файла."""
+    d = result.single_best_deposit
+    if d is None:
+        w = result.single_widest_deposit
+        return dict(title="Если положить всё на один вклад", income=None, comparison="", notes=[
+            f"Всю сумму в одном вкладе разместить нельзя: ни один вклад не принимает "
+            f"{money(params.amount)} р. Наибольшая максимальная сумма — {money(w.max_sum)} р. "
+            f"(«{w.name}», {w.bank_name})."])
+    notes = []
+    if result.single_best_uninsured > 0:
+        notes.append(f"Застраховано {money(result.single_best_insured)} р., не застраховано "
+                     f"{money(result.single_best_uninsured)} р.: страховой лимит — "
+                     f"{money(insurance_limit)} р. на банк.")
+    else:
+        notes.append("Вся сумма с процентами в пределах страхового лимита.")
+    if params.personal_limit is not None and params.amount > params.personal_limit:
+        notes.append(f"Сумма больше вашей предельной суммы в один банк "
+                     f"({money(params.personal_limit)} р.).")
+    diff = result.single_best_diff
+    if diff > 0:
+        comparison = f"распределение даёт на {money(diff)} р. больше"
+    elif diff == 0:
+        comparison = "столько же, сколько распределение"
+    elif result.single_best_breaks_limits and params.personal_limit is not None:
+        comparison = (f"на {money(-diff)} р. больше распределения, но сумма в одном банке больше "
+                      f"вашей предельной")
+    elif result.single_best_breaks_limits:
+        comparison = f"на {money(-diff)} р. больше распределения, но часть суммы не застрахована"
+    else:
+        comparison = f"на {money(-diff)} р. больше распределения (погрешность шага дискретизации)"
+    return dict(title=f"Если положить всё на один вклад: «{d.name}» ({d.bank_name}, "
+                      f"{d.term_months} мес.)",
+                income=money(result.single_best_income), notes=notes, comparison=comparison)
+
+
 def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_limit: int,
                 avg_max_rate) -> str:
-    """Текстовый отчёт. Технические сведения о расчёте — отдельным последним разделом
-    (п. 4.1.1.1, функция 18)."""
+    """Текстовый отчёт с результатами расчёта (п. 4.1.1.1, функция 18)."""
     sp = lambda s: s.replace(NBSP, " ")
     lines = [
         "Программная система расчёта доходности и оптимизации распределения средств",
@@ -57,7 +92,7 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
            "не применяется — задана предельная сумма в один банк"),
         f"  Предельная сумма в один банк: "
         f"{sp(money(params.personal_limit)) + ' р.' if params.personal_limit else 'не задана'}",
-        f"  Проценты, уже полученные в этом году по другим вкладам и счетам: "
+        f"  Ранее полученные проценты по вкладам и счетам в текущем году: "
         f"{sp(money(params.other_income))} р.",
         "",
         "РАСПРЕДЕЛЕНИЕ СРЕДСТВ (точный метод)",
@@ -93,24 +128,14 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
     ]
     for extra in result.remainder_reasons[1:]:
         lines.append(f"      также действует: {extra}")
-    if result.single_best_deposit:
-        d = result.single_best_deposit
-        fits = result.single_best_amount >= params.amount
-        title = "Всё в один вклад" if fits else "Наибольшая сумма в один вклад"
-        lines.append(f"  {title}: «{d.name}» ({d.bank_name}, {d.term_months} мес.), "
-                     f"{sp(money(result.single_best_amount))} р. — доход "
-                     f"{sp(money(result.single_best_income))} р.")
-        if not fits:
-            why = {"insurance": "в одном банке действует страховой лимит",
-                   "personal": "действует ограничение суммы в один банк"}.get(
-                result.single_best_limit, "у вклада есть максимальная сумма")
-            lines.append(f"      всю сумму в один вклад разместить нельзя: {why}; остальные "
-                         f"{sp(money(params.amount - result.single_best_amount))} р. "
-                         f"остались бы неразмещёнными")
-        if result.single_best_diff > 0:
-            lines.append(f"      распределение даёт на {sp(money(result.single_best_diff))} р. больше")
-        elif result.single_best_diff == 0:
-            lines.append("      столько же, сколько распределение: лучший вариант — этот один вклад")
+    if result.remainder_tips:
+        lines.append("      что можно сделать:")
+        lines += [f"        — {t}" for t in result.remainder_tips]
+    single = single_deposit_summary(result, params, insurance_limit)
+    lines.append(f"  {single['title']}: " + (f"{sp(single['income'])} р." if single['income'] else "—"))
+    lines += [f"      {sp(n)}" for n in single["notes"]]
+    if single["comparison"]:
+        lines.append(f"      {sp(single['comparison'])}")
     lines.append(f"  Использовано банков: {result.exact.banks_used} из предельных {result.max_banks}")
     if result.k_plus_one_gain is not None:
         lines.append(f"  Прирост дохода при увеличении предельного числа банков на 1: "
@@ -138,10 +163,17 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
         "  процентов, досрочное расторжение вкладов, последующие изменения законодательства.",
         "  Порог 2 400 000 р. установлен для совокупности баз, включающей также доходы от дивидендов,",
         "  продажи имущества и ценных бумаг, цифровой валюты; такие доходы не учитываются.",
-        "  Необлагаемая сумма (1 000 000 р. × наибольшая ключевая ставка ЦБ РФ за год) определена",
-        "  по значениям ключевой ставки, известным на дату расчёта; её последующие изменения",
-        "  не учитываются. Показан НДФЛ, приходящийся на доход по вкладам этого распределения,",
-        "  а не весь налог за год.",
+        "  Необлагаемая сумма равна 1 000 000 р. × наибольшая ключевая ставка ЦБ РФ на 1-е число",
+        "  месяца текущего года по значениям, известным на дату расчёта; её последующие изменения",
+        "  не учитываются.",
+        "  Ставка 13 % применяется к совокупному процентному доходу текущего года, уменьшенному",
+        "  на необлагаемую сумму, в пределах 2,4 млн р.; к части свыше 2,4 млн р. применяется",
+        "  ставка НДФЛ 15 %.",
+        "  Проценты вкладов с капитализацией отнесены к годам начисления, без капитализации —",
+        "  к году окончания срока.",
+        "  Для вкладов без капитализации дольше 15 месяцев учтён перенос неиспользованных",
+        "  необлагаемых сумм всех лет срока.",
+        "  Показан НДФЛ, приходящийся на доход по вкладам этого распределения, а не весь налог за год.",
         "  Величину налога определяет налоговый орган.",
     ]
     for n in result.notices:

@@ -5,7 +5,7 @@
   2. шаг дискретизации и оценка объёма; при превышении — укрупнение шага (п. 4.1.2.11);
   3. точный метод (ДП) и контроль его результата по приближённому (жадному) методу;
   4. выбранное распределение → подсистема расчёта: доходы позиций, НДФЛ, застрахованная часть;
-  5. доход в один вклад, прирост при K+1, причина остатка.
+  5. доход при размещении всей суммы в один вклад, прирост при K+1, причина остатка.
 Все данные приходят параметрами; модуль не хранит состояния.
 """
 import math
@@ -15,7 +15,7 @@ from typing import Dict, List
 from app.models import (CalcParams, CalcResult, CbrInfo, Deposit, InsuranceMode,
                         MethodResult)
 from app.optimization import exact_dp, greedy
-from app.optimization.grid import Grid, bank_principal_cap_rub, base_step, build_grid
+from app.optimization.grid import Grid, base_step, build_grid
 from app.yield_calc import calculator as calc
 
 # Допустимый объём вычислений в условных единицах (обработка одного элемента массива),
@@ -79,31 +79,25 @@ def _method_result(allocation, h, coefs, start, banks_used) -> MethodResult:
     return MethodResult(positions, income, placed, banks_used)
 
 
-def _single_best(deposits, coefs, params, insurance_limit):
-    """Доход при размещении всей суммы в один вклад с наибольшим доходом (п. 4.1.1.4).
+def _single_best(deposits, coefs, params, start, insurance_limit):
+    """Вся сумма — в один вклад с наибольшим доходом (п. 4.1.1.4, 4.1.2.13).
 
-    Если вся сумма в вклад не помещается (п. 4.1.2.13), берётся наибольшая сумма, которую
-    можно в него разместить, и запоминается ограничение, которое не дало разместить больше:
-    «max_sum», «insurance» или «personal» (для пояснения пользователю).
+    Учитываются срок, исключённые банки и пределы суммы самого вклада. Страховой лимит
+    и предельная сумма в один банк не применяются: вместо этого выводится, какая часть
+    средств с процентами застрахована. Возвращает (вклад, доход, застраховано,
+    не застраховано, вклад с наибольшей максимальной суммой — если ни один не подходит).
     """
-    best = (None, 0, Decimal("0"), None)
-    for d in deposits:
-        amount, limit = params.amount, None
-        if d.max_sum is not None and d.max_sum < amount:
-            amount, limit = d.max_sum, "max_sum"
-        cap = bank_principal_cap_rub(params.insurance_mode, insurance_limit, params.personal_limit)
-        if cap is not None and cap < amount:
-            amount, limit = cap, ("insurance" if params.personal_limit is None else "personal")
-        if params.personal_limit is None and params.insurance_mode == InsuranceMode.WITH_INTEREST:
-            with_interest_cap = int(insurance_limit / (1.0 + coefs[d.deposit_id]))
-            if with_interest_cap < amount:
-                amount, limit = with_interest_cap, "insurance"
-        if amount < d.min_sum:
-            continue
-        income = calc.position_income(amount, coefs[d.deposit_id])
-        if income > best[2]:
-            best = (d, amount, income, limit)
-    return best
+    amount = params.amount
+    fits = [d for d in deposits
+            if d.min_sum <= amount and (d.max_sum is None or d.max_sum >= amount)]
+    if not fits:
+        widest = max(deposits, key=lambda d: d.max_sum or 0)
+        return None, Decimal("0"), Decimal("0"), Decimal("0"), widest
+    best = max(fits, key=lambda d: (calc.position_income(amount, coefs[d.deposit_id]),
+                                    -d.deposit_id))
+    positions = calc.build_positions([(best, amount)], coefs, start)
+    insured, uninsured = calc.insured_split(positions, insurance_limit)
+    return best, positions[0].income, insured, uninsured, None
 
 
 def _remainder_reasons(grid: Grid, allocation, banks_used, K, remainder) -> List[str]:
@@ -156,6 +150,48 @@ def _remainder_reasons(grid: Grid, allocation, banks_used, K, remainder) -> List
     return reasons or [REASON_MIN_SUM]
 
 
+def _rub(value) -> str:
+    """Сумма с разделением разрядов: 1 400 000 или 12 345,67."""
+    if isinstance(value, int):
+        return f"{value:,}".replace(",", " ")
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def _remainder_tips(reasons: List[str], params: CalcParams, not_excluded: int, k_gain,
+                    insurance_limit: int) -> List[str]:
+    """Что пользователь может сделать, чтобы разместить остаток. Для остатка в пределах
+    погрешности дискретизации советов нет: его не разместить никакими изменениями."""
+    if not reasons or reasons[0] == REASON_STEP:
+        return []
+    tips = []
+    if params.max_banks < not_excluded:
+        gain = (f": с {params.max_banks + 1} банками доход вырастет на {_rub(k_gain)} р."
+                if k_gain is not None and k_gain > 0 else ".")
+        tips.append("Увеличьте предельное число банков" + gain)
+    if params.excluded_bank_ids:
+        tips.append(f"Верните в расчёт исключённые банки ({len(params.excluded_bank_ids)}).")
+    if REASON_BANK_LIMIT in reasons:
+        if params.personal_limit is not None and params.personal_limit < insurance_limit:
+            tips.append(f"Увеличьте предельную сумму в один банк: до страхового лимита "
+                        f"({_rub(insurance_limit)} р.) средства в каждом банке застрахованы.")
+        elif params.personal_limit is not None:
+            tips.append(f"Увеличьте предельную сумму в один банк. Средства сверх страхового лимита "
+                        f"({_rub(insurance_limit)} р.) в одном банке не застрахованы.")
+        elif params.insurance_mode != InsuranceMode.NONE:
+            tips.append(f"Если вы готовы держать в одном банке больше страхового лимита "
+                        f"({_rub(insurance_limit)} р.), выберите режим «Без учёта лимита» или задайте "
+                        f"свою предельную сумму в один банк. Средства сверх лимита в каждом банке "
+                        f"не будут застрахованы.")
+    if (params.term_from, params.term_to) != (1, 18) and \
+            (REASON_MAX_DEPOSITS in reasons or REASON_BANK_LIMIT in reasons):
+        tips.append("Расширьте границы срока — в расчёт попадут и другие вклады.")
+    tips.append("Оставшуюся сумму можно разместить самостоятельно: во вкладе или на накопительном "
+                "счёте банка, которого нет в справочнике (страховое возмещение действует в каждом "
+                "банке отдельно), во вкладах для премиального (VIP) обслуживания или в других "
+                "инструментах, например в облигациях федерального займа.")
+    return tips
+
+
 def optimize(deposits: List[Deposit], params: CalcParams, cbr: CbrInfo,
              insurance_limit: int) -> CalcResult:
     """Полный расчёт распределения. deposits — непустой список отобранных вкладов."""
@@ -191,8 +227,15 @@ def optimize(deposits: List[Deposit], params: CalcParams, cbr: CbrInfo,
     insured, uninsured = calc.insured_split(exact_res.positions, insurance_limit)
 
     # 5. дополнительные показатели
-    best_dep, best_amount, best_income, best_limit = _single_best(deposits, coefs, params,
-                                                                  insurance_limit)
+    best_dep, best_income, best_insured, best_uninsured, widest = _single_best(
+        deposits, coefs, params, start, insurance_limit)
+    # нарушает ли один вклад ограничения, выбранные для распределения
+    best_breaks_limits = best_dep is not None and (
+        (params.personal_limit is not None and params.amount > params.personal_limit) or
+        (params.personal_limit is None and params.insurance_mode == InsuranceMode.PRINCIPAL
+         and params.amount > insurance_limit) or
+        (params.personal_limit is None and params.insurance_mode == InsuranceMode.WITH_INTEREST
+         and best_uninsured > 0))
 
     # прирост при K+1 — если использованы все разрешённые банки и K меньше числа
     # неисключённых банков (п. 4.1.1.4, 4.1.3.3)
@@ -207,14 +250,17 @@ def optimize(deposits: List[Deposit], params: CalcParams, cbr: CbrInfo,
     # позиции распределения выводятся по убыванию дохода
     exact_res.positions.sort(key=lambda p: p.income, reverse=True)
     reasons = _remainder_reasons(grid, exact.allocation, exact.banks_used, K, remainder)
+    tips = _remainder_tips(reasons, params, not_excluded, k_gain, insurance_limit)
 
     return CalcResult(
         exact=exact_res, approx=approx_res, tax_years=tax_years, tax_total=tax_total,
         income_after_tax=exact_res.income - tax_total, insured=insured, uninsured=uninsured,
         remainder=remainder, remainder_reasons=reasons,
-        single_best_deposit=best_dep, single_best_amount=best_amount,
-        single_best_income=best_income, single_best_diff=exact_res.income - best_income,
+        single_best_deposit=best_dep, single_best_income=best_income,
+        single_best_diff=exact_res.income - best_income,
+        single_best_insured=best_insured, single_best_uninsured=best_uninsured,
+        single_best_breaks_limits=best_breaks_limits, single_widest_deposit=widest,
         max_banks=params.max_banks, available_banks=len(bfs),
         k_plus_one_gain=k_gain,
         step=h, step_increased=increased, effective_amount=grid.effective_amount,
-        notices=notices, single_best_limit=best_limit)
+        notices=notices, remainder_tips=tips)

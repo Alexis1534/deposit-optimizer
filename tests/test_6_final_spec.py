@@ -99,14 +99,40 @@ class AvgMaxRateMissing(unittest.TestCase):
 
 
 class SingleDeposit(unittest.TestCase):
-    """п. 4.1.2.13: если вся сумма не помещается в один вклад — указывается размещаемая сумма."""
+    """п. 4.1.2.13: вся сумма — в один вклад; страховой лимит и предельная сумма в один банк
+    не применяются, выводится застрахованная и незастрахованная части."""
 
-    def test_amount_limited(self):
+    def test_whole_sum_ignores_insurance_limit(self):
         deps = [dep(1, 1, 15, 12, 1000, 500_000), dep(2, 2, 12, 12, 1000, None)]
         r = optimize(deps, params(3_000_000, InsuranceMode.PRINCIPAL), CBR, 1_400_000)
-        self.assertEqual(r.single_best_amount, 1_400_000)     # не вся сумма: предел по банку
-        html = client().post("/calculate", data=dict(FORM, amount="5000000")).data.decode()
-        self.assertIn("Всю сумму в один вклад разместить нельзя", html)
+        self.assertEqual(r.single_best_deposit.deposit_id, 2)    # вклад 1 всю сумму не примет
+        self.assertEqual(r.single_best_insured, 1_400_000)
+        self.assertEqual(r.single_best_insured + r.single_best_uninsured,
+                         3_000_000 + r.single_best_income)
+        self.assertTrue(r.single_best_breaks_limits)
+
+    def test_single_may_beat_distribution_with_limits(self):
+        deps = [dep(1, 1, 18, 12, 1000, None), dep(2, 2, 10, 12, 1000, None)]
+        r = optimize(deps, params(3_000_000, InsuranceMode.PRINCIPAL), CBR, 1_400_000)
+        self.assertLess(r.single_best_diff, 0)
+        r = optimize(deps, params(3_000_000, InsuranceMode.NONE), CBR, 1_400_000)
+        self.assertGreaterEqual(r.single_best_diff, 0)
+        self.assertFalse(r.single_best_breaks_limits)
+
+    def test_no_deposit_takes_whole_sum(self):
+        deps = [dep(1, 1, 15, 12, 1000, 500_000), dep(2, 2, 12, 12, 1000, 800_000)]
+        r = optimize(deps, params(1_000_000, InsuranceMode.NONE), CBR, 1_400_000)
+        self.assertIsNone(r.single_best_deposit)
+        self.assertEqual(r.single_widest_deposit.deposit_id, 2)
+
+    def test_page_and_file(self):
+        c = client()
+        html = c.post("/calculate", data=dict(FORM, amount="5000000")).data.decode()
+        self.assertIn("Если положить всё на один вклад", html)
+        self.assertIn("не застраховано", html)
+        text = c.get("/save").data.decode()
+        self.assertIn("Если положить всё на один вклад", text)
+        self.assertIn("не застраховано", text)
 
 
 class StepAndRemainder(unittest.TestCase):
@@ -139,8 +165,7 @@ class PersonalLimitReplacesInsurance(unittest.TestCase):
         for mode in InsuranceMode:
             r = optimize(deps, params(5_000_000, mode, personal=3_000_000), CBR, 1_400_000)
             self.assertEqual(self.per_bank(r)[1], 3_000_000, mode)
-            self.assertEqual(r.single_best_amount, 3_000_000)
-            self.assertEqual(r.single_best_limit, "personal")
+            self.assertTrue(r.single_best_breaks_limits)
 
     def test_limit_below_insurance(self):
         deps = [dep(1, 1, 18.0, 12, 1000, None), dep(2, 2, 10.0, 12, 1000, None)]
@@ -178,6 +203,34 @@ class LeadingZeros(unittest.TestCase):
         for name, value in (("amount", "3 000 000"), ("term_from", "1"), ("term_to", "18"),
                             ("other_income", "0,50")):
             self.assertRegex(html, rf'name="{name}"[^>]*value="{value}"')
+
+
+class RemainderTips(unittest.TestCase):
+    """Подсказки, как уменьшить нераспределённый остаток."""
+
+    def tips(self, **form):
+        c = client()
+        c.post("/calculate", data=dict(FORM, **form))
+        html = c.get("/").data.decode()
+        text = c.get("/save").data.decode()
+        return html, text
+
+    def test_bank_limit_and_k(self):
+        html, text = self.tips(amount="10000000", max_banks="2")
+        self.assertIn("Как уменьшить нераспределённый остаток", html)
+        self.assertIn("Увеличьте предельное число банков", html)
+        self.assertIn("«Без учёта лимита»", html)
+        self.assertIn("что можно сделать:", text)
+
+    def test_no_tips_without_remainder(self):
+        html, text = self.tips(amount="100000")
+        self.assertNotIn("Как уменьшить нераспределённый остаток", html)
+        self.assertNotIn("что можно сделать:", text)
+
+    def test_no_tips_for_discretisation_error(self):
+        r = optimize([dep(1, 1, 12, 12, 1000, None)], params(1_001_000 - 1, InsuranceMode.NONE), CBR, 1_400_000)
+        self.assertEqual(r.remainder_reasons[0], REASON_STEP)
+        self.assertEqual(r.remainder_tips, [])
 
 
 if __name__ == "__main__":
