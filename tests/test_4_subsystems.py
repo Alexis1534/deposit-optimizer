@@ -62,18 +62,19 @@ class Income(unittest.TestCase):
         # открытие 31.12.2026: первый день начисления 01.01.2027, 2026 г. дней не получает
         d = dep(1, 1, 10, 12, 1, None)
         self.assertAlmostEqual(calc.income_coefficient(d, date(2026, 12, 31)), 0.10 * 365 / 365, places=12)
-        caps = calc.carryover_caps(dep(1, 1, 10, 18, 1, None), Decimal("1000"), date(2026, 12, 31))
+        caps = calc.carryover_caps(dep(1, 1, 10, 18, 1, None), 1000, date(2026, 12, 31))
         self.assertEqual(list(caps), [2027])
 
     def test_carryover_caps_by_accrual_days(self):
-        # 18 мес. с 27.10.2026 по 27.04.2028: дни начисления 65 (2026) + 365 (2027) + 118 (2028) = 548
+        # 18 мес. с 27.10.2026 по 27.04.2028: дни начисления 65 (2026) + 365 (2027) + 118 (2028).
+        # Предел года-источника — проценты, фактически начисленные за этот год.
         d = dep(1, 1, 8.5, 18, 1, None)
         start = date(2026, 10, 27)
         income = calc.position_income(1240000, calc.income_coefficient(d, start))
         self.assertEqual(income, calc.round_money(1240000 * 0.085 * (65 / 365 + 1 + 118 / 366)))
-        caps = calc.carryover_caps(d, income, start)
-        self.assertEqual(caps[2026], calc.round_money(income * Decimal(65) / Decimal(548)))
-        self.assertEqual(caps[2027], calc.round_money(income * Decimal(365) / Decimal(548)))
+        caps = calc.carryover_caps(d, 1240000, start)
+        self.assertEqual(caps, {2026: calc.round_money(1240000 * 0.085 * 65 / 365),
+                                2027: Decimal("105400.00")})
 
     def test_capitalization_monthly(self):
         d = dep(1, 1, 12, 3, 1, None, cap=True)

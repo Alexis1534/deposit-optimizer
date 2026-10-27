@@ -141,10 +141,12 @@ def build_positions(allocation: List[Tuple[Deposit, int]], coefs: Dict[int, floa
 CARRYOVER_MIN_TERM = 15        # перенос действует для вкладов дольше 15 месяцев
 
 
-def carryover_caps(deposit: Deposit, income: Decimal, start: date) -> Dict[int, Decimal]:
-    """Пределы переноса по одному вкладу: доход, приходящийся по дням размещения на каждый
-    календарный год срока, предшествующий году завершения (п. 4.1.2.6 ТЗ, п. 1 ст. 214.2 НК).
+def carryover_caps(deposit: Deposit, amount: int, start: date) -> Dict[int, Decimal]:
+    """Пределы переноса по одному вкладу (п. 4.1.2.6 ТЗ, п. 1 ст. 214.2 НК): проценты, фактически
+    начисленные за каждый календарный год срока, предшествующий году завершения.
 
+    Для года-источника предел = сумма × ставка × (дни начисления в этом году ÷ длина этого года);
+    дни начисления — со дня, следующего за открытием, по день окончания включительно (ст. 839 ГК).
     Неиспользованная необлагаемая сумма такого года может быть перенесена в год завершения
     срока, но не более этой величины. Пустой словарь — вклад под правило не подпадает
     (капитализация процентов или срок не больше 15 месяцев).
@@ -152,15 +154,15 @@ def carryover_caps(deposit: Deposit, income: Decimal, start: date) -> Dict[int, 
     if deposit.capitalization or deposit.term_months <= CARRYOVER_MIN_TERM:
         return {}
     finish = end_date(start, deposit.term_months)
-    total_days = Decimal((finish - start).days)
-    first, stop = start + DAY, finish + DAY     # дни начисления (start, finish], ст. 839 ГК РФ
+    r = deposit.rate / 100.0
+    first = start + DAY                       # первый день начисления
     caps = {}
     for year in range(first.year, finish.year):
-        year_start = max(first, date(year, 1, 1))
-        year_end = min(stop, date(year + 1, 1, 1))
-        days = (year_end - year_start).days
-        if days > 0:
-            caps[year] = round_money(income * Decimal(days) / total_days)
+        # дни начисления, приходящиеся на год: (max(start, 31.12 пред. года), min(finish, 31.12 года)]
+        year_from = max(start, date(year, 1, 1) - DAY)
+        year_to = min(finish, date(year, 12, 31))
+        if year_to > year_from:
+            caps[year] = round_money(amount * r * _year_fraction(year_from, year_to))
     return caps
 
 
@@ -183,8 +185,8 @@ def compute_tax(positions: List[Position], other_income, calc_date: date,
     * база текущего года увеличивается на процентный доход по вкладам вне расчёта;
     * для вклада без капитализации со сроком больше 15 месяцев неиспользованные части
       необлагаемых сумм всех лет срока размещения накапливаются и уменьшают базу года
-      завершения срока; вклад берёт из каждого такого года не больше дохода, приходящегося
-      на этот год по дням размещения; накопленный остаток года, не израсходованный вкладами,
+      завершения срока; вклад берёт из каждого такого года не больше процентов, фактически
+      начисленных за этот год; накопленный остаток года, не израсходованный вкладами,
       остаётся доступным для более поздних лет завершения;
     * налог: 13 % с базы в пределах 2 400 000 р. и 15 % с части сверх этого значения;
     * пользователю выводится НДФЛ, приходящийся на доход по вкладам: разность
@@ -201,7 +203,7 @@ def compute_tax(positions: List[Position], other_income, calc_date: date,
     # пределы переноса: {год завершения: {год-источник: предел}} по всем подпадающим вкладам
     caps = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
     for p in positions:
-        for source, cap in carryover_caps(p.deposit, p.income, calc_date).items():
+        for source, cap in carryover_caps(p.deposit, p.amount, calc_date).items():
             caps[p.end_date.year][source] += cap
             by_year.setdefault(source, Decimal("0"))                # год-источник переноса
 

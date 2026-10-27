@@ -305,16 +305,16 @@ class NonTaxableCarryover(unittest.TestCase):
         """Вклад на 18 мес.: переносятся остатки и 2026, и 2027 годов."""
         pos, (years, _) = self.tax(18)
         y = {t.year: t for t in years}
-        caps = calc.carryover_caps(pos[0].deposit, pos[0].income, TODAY)
+        caps = calc.carryover_caps(pos[0].deposit, pos[0].amount, TODAY)
         self.assertEqual(sorted(caps), [2026, 2027])
         expected = min(Decimal("160000.00"), caps[2026]) + min(Decimal("140000.00"), caps[2027])
         self.assertEqual(y[2028].carried, expected)
         self.assertEqual(y[2028].base, pos[0].income - Decimal("140000.00") - expected)
 
     def test_source_year_limited_by_day_share(self):
-        """Из каждого года берётся не больше дохода, приходящегося на него по дням."""
+        """Из каждого года берётся не больше процентов, начисленных за этот год."""
         pos, (years, _) = self.tax(16, amount=100_000)
-        caps = calc.carryover_caps(pos[0].deposit, pos[0].income, TODAY)
+        caps = calc.carryover_caps(pos[0].deposit, pos[0].amount, TODAY)
         self.assertLess(sum(caps.values()), Decimal("300000"))
         self.assertEqual({t.year: t for t in years}[2028].carried, sum(caps.values()))
 
@@ -333,7 +333,7 @@ class NonTaxableCarryover(unittest.TestCase):
         short_dep = dep(2, 2, 12, 12, 1, None)         # доход в 2027 «съедает» остаток года
         pos, (years, _) = self.tax(0, deposits=[long_dep, short_dep], amount=1_000_000)
         y = {t.year: t for t in years}
-        caps = calc.carryover_caps(long_dep, [p for p in pos if p.deposit is long_dep][0].income, TODAY)
+        caps = calc.carryover_caps(long_dep, [p for p in pos if p.deposit is long_dep][0].amount, TODAY)
         left_2027 = max(Decimal("140000.00") - y[2027].deposit_income, Decimal("0"))
         expected = min(Decimal("160000.00"), caps[2026]) + min(left_2027, caps[2027])
         self.assertEqual(y[2028].carried, expected)
@@ -355,8 +355,8 @@ class NonTaxableCarryover(unittest.TestCase):
         income = {p.deposit.deposit_id: p.income for p in pos}
         self.assertEqual({p.end_date.year for p in pos}, {2027, 2028})
 
-        caps_first = calc.carryover_caps(first_dep, income[1], today)
-        caps_later = calc.carryover_caps(later_dep, income[2], today)
+        caps_first = calc.carryover_caps(first_dep, 3_000_000, today)
+        caps_later = calc.carryover_caps(later_dep, 3_000_000, today)
         # 2027 год завершения берёт из остатка 2026 года первым
         taken_2026 = min(Decimal("160000.00"), caps_first[2026])
         self.assertEqual(y[2027].carried, taken_2026)
