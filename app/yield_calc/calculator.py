@@ -8,7 +8,7 @@
 """
 import calendar
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Tuple
 
@@ -36,13 +36,18 @@ def end_date(start: date, term_months: int) -> date:
     return add_months(start, term_months)
 
 
+DAY = timedelta(days=1)
+
+
 def _year_fraction(d1: date, d2: date) -> float:
     """Σ дней / длина года по каждому календарному году отдельно (365 или 366, п. 4.1.2.5).
 
-    Период [d1, d2), пересекающий Новый год, делится по годам.
+    Проценты начисляются со дня, следующего за днём поступления вклада, по день возврата
+    включительно (п. 1 ст. 839 ГК РФ), то есть за дни периода (d1, d2]. Период, пересекающий
+    Новый год, делится по годам: 31 декабря относится к уходящему году, 1 января — к новому.
     """
     total = 0.0
-    cur = d1
+    cur, d2 = d1 + DAY, d2 + DAY          # (d1, d2] == [d1 + 1, d2 + 1)
     while cur < d2:
         next_new_year = date(cur.year + 1, 1, 1)
         part_end = min(d2, next_new_year)
@@ -148,10 +153,11 @@ def carryover_caps(deposit: Deposit, income: Decimal, start: date) -> Dict[int, 
         return {}
     finish = end_date(start, deposit.term_months)
     total_days = Decimal((finish - start).days)
+    first, stop = start + DAY, finish + DAY     # дни начисления (start, finish], ст. 839 ГК РФ
     caps = {}
-    for year in range(start.year, finish.year):
-        year_start = max(start, date(year, 1, 1))
-        year_end = min(finish, date(year + 1, 1, 1))
+    for year in range(first.year, finish.year):
+        year_start = max(first, date(year, 1, 1))
+        year_end = min(stop, date(year + 1, 1, 1))
         days = (year_end - year_start).days
         if days > 0:
             caps[year] = round_money(income * Decimal(days) / total_days)
