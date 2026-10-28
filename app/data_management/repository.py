@@ -91,7 +91,7 @@ def load_catalog(db_path: str) -> Catalog:
 
     deposits: List[Deposit] = []
     for dep_id, bank_id, name, rate, term, min_sum, max_sum, cap, actual in rows:
-        label = f"вклад № {dep_id}" + (f" «{name}»" if name else "")
+        label = f"вклад № {dep_id}" + (f" «{display_name(name)}»" if name else "")
         problems = []
         bank = banks.get(bank_id)
         if bank is None:
