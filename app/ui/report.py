@@ -154,13 +154,13 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
             ("Перенос прошлых лет, р.", lambda t: money(t.carried)),
             ("Налоговая база, р.", lambda t: money(max(t.base, 0))),   # база не бывает отрицательной
             ("Ставка налога", lambda t: t.scale),
-            ("Налог без вкладов, р.", lambda t: money(t.tax_without)),
-            ("Налог с вкладами, р.", lambda t: money(t.tax_full)),
+            ("Налог по ранее выплаченным процентам, р.", lambda t: money(t.tax_without)),
+            ("Суммарный ожидаемый налог по вкладам, р.", lambda t: money(t.tax_full)),
             ("НДФЛ на данное распределение, р.", lambda t: money(t.tax))]
-    lines.append(f"  {'Показатель':<34}" + "".join(f"{t.year:>16}" for t in result.tax_years))
-    lines.append("  " + "-" * (34 + 16 * len(result.tax_years)))
+    lines.append(f"  {'Показатель':<44}" + "".join(f"{t.year:>16}" for t in result.tax_years))
+    lines.append("  " + "-" * (44 + 16 * len(result.tax_years)))
     for title, value in rows:
-        lines.append(f"  {title:<34}" + "".join(f"{sp(value(t)):>16}" for t in result.tax_years))
+        lines.append(f"  {title:<44}" + "".join(f"{sp(value(t)):>16}" for t in result.tax_years))
     lines.append(f"  Итого НДФЛ на данное распределение: {sp(money(result.tax_total))} р.")
     lines += [
         "",

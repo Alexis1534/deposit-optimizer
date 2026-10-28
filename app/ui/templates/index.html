@@ -215,8 +215,8 @@
         <tr><th scope="row">Перенос прошлых лет</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.carried) }}</td>{% endfor %}</tr>
         <tr><th scope="row">Налоговая база</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money([t.base, 0]|max) }}</td>{% endfor %}</tr>
         <tr><th scope="row">Ставка</th>{% for t in result.tax_years %}<td class="num">{{ t.scale }}</td>{% endfor %}</tr>
-        <tr><th scope="row">Налог без вкладов</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax_without) }}</td>{% endfor %}</tr>
-        <tr><th scope="row">Налог с вкладами</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax_full) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Налог по ранее выплаченным процентам</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax_without) }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Суммарный ожидаемый налог по вкладам</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax_full) }}</td>{% endfor %}</tr>
         <tr class="total"><th scope="row">НДФЛ на данное распределение (оценка)</th>{% for t in result.tax_years %}<td class="num">{{ fmt_money(t.tax) }}</td>{% endfor %}</tr>
       </tbody>
     </table>

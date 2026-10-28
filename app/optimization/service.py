@@ -178,7 +178,7 @@ def _remainder_tips(reasons: List[str], params: CalcParams, not_excluded: int, k
             tips.append(f"Увеличьте предельную сумму в один банк. Средства сверх страхового лимита "
                         f"({_rub(insurance_limit)} р.) в одном банке не застрахованы.")
         elif params.insurance_mode != InsuranceMode.NONE:
-            tips.append(f"Если вы готовы держать в одном банке больше страхового лимита "
+            tips.append(f"Если вы готовы размещать в одном банке больше страхового лимита "
                         f"({_rub(insurance_limit)} р.), выберите режим «Без учёта лимита» или задайте "
                         f"свою предельную сумму в один банк. Средства сверх лимита в каждом банке "
                         f"не будут застрахованы.")
