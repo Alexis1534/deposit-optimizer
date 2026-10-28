@@ -97,20 +97,20 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
         "",
         "РАСПРЕДЕЛЕНИЕ СРЕДСТВ (точный метод)",
     ]
-    header = (f"  {'Банк':<28} {'Вклад':<22} {'Сумма, р.':>16} {'Срок':>5} {'Ставка':>7} "
+    header = (f"  {'Банк':<28} {'Вклад':<36} {'Сумма, р.':>16} {'Срок':>5} {'Ставка':>7} "
               f"{'Капит.':>7} {'Доход, р.':>14}")
     lines.append(header)
     lines.append("  " + "-" * (len(header) - 2))
     for p in result.exact.positions:
         mark = " !" if is_suspicious(p.deposit.rate, avg_max_rate) else ""
-        lines.append(f"  {p.deposit.bank_name[:28]:<28} {p.deposit.name[:22]:<22} "
+        lines.append(f"  {p.deposit.bank_name[:28]:<28} {p.deposit.name[:36]:<36} "
                      f"{sp(money(p.amount)):>16} {p.deposit.term_months:>5} "
                      f"{rate(p.deposit.rate) + mark:>7} {('да' if p.deposit.capitalization else 'нет'):>7} "
                      f"{sp(money(p.income)):>14}")
     lines += [
         "",
         "  Сроки вкладов в справочнике заданы в месяцах. Проценты начислены за фактическое число дней:",
-        "  со дня, следующего за датой расчёта, по день окончания срока включительно. Если банк",
+        "  со дня следующего за датой расчёта по день окончания срока включительно. Если банк",
         "  устанавливает срок вклада в днях, число дней начисления, а с ним и доход, могут немного",
         "  отличаться от расчёта.",
     ]

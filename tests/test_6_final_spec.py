@@ -235,3 +235,14 @@ class RemainderTips(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ThousandsInNames(unittest.TestCase):
+    """Тысячи в названиях вкладов пишутся как «тыс.», а не буквой «к»."""
+
+    def test_display_name(self):
+        from app.data_management.repository import display_name
+        self.assertEqual(display_name("Новый старт (от 50к)"), "Новый старт (от 50 тыс.)")
+        self.assertEqual(display_name("Россия (от 100 К)"), "Россия (от 100 тыс.)")
+        self.assertEqual(display_name("Вклад (от 1.5млн)"), "Вклад (от 1.5млн)")
+        self.assertEqual(display_name("Копилка"), "Копилка")

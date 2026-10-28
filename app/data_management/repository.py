@@ -4,6 +4,7 @@
 по параметрам, наиболее ранняя дата актуальности. Вызывается только подсистемой
 интерфейса; к подсистемам расчёта и внешних источников не обращается (карта Константайна).
 """
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import date
@@ -12,6 +13,14 @@ from typing import List, Optional, Tuple
 from app.models import Deposit, IntegrityIssue
 
 TERM_MIN, TERM_MAX = 1, 18
+_THOUSAND_K = re.compile(r"(?<=\d)\s?[кКkK](?![\w])")
+
+
+def display_name(name: str) -> str:
+    """Название вклада для показа: «50к» -> «50 тыс.» (тысячи пишутся словом, а не буквой «к»)."""
+    return _THOUSAND_K.sub(" тыс.", name.strip())
+
+
 SUSPICIOUS_MARGIN_PP = 3.0     # запас над средней максимальной ставкой топ-10 банков, п.п.
 
 
@@ -113,7 +122,7 @@ def load_catalog(db_path: str) -> Catalog:
         deposits.append(Deposit(
             deposit_id=dep_id, bank_id=bank_id, bank_name=bank[1].strip(),
             bank_license=str(bank[2]).strip(),
-            name=name.strip(), rate=float(rate), term_months=term, min_sum=min_sum,
+            name=display_name(name), rate=float(rate), term_months=term, min_sum=min_sum,
             max_sum=max_sum, capitalization=bool(cap), actual_date=actual_date))
 
     bank_list = sorted({(d.bank_id, d.bank_name) for d in deposits}, key=lambda b: b[1])
