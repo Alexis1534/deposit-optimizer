@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 
-{# ---------- служебные сообщения ---------- #}
+{# служебные сообщения #}
 {% if cbr.from_cache %}<p class="msg msg-warn">{{ cbr.message }}</p>{% endif %}
 {% if stale_date %}
 <p class="msg msg-warn">Сведения справочника могли устареть: наиболее ранняя дата актуальности —
@@ -23,7 +23,7 @@
 {% if message %}<p class="msg msg-warn">{{ message }}</p>{% endif %}
 
 <div class="layout">
-{# ---------- форма параметров ---------- #}
+{# форма параметров #}
 <form class="params" method="post" action="{{ url_for('calculate') }}" novalidate>
   <div class="params-head">
     <h2>Параметры расчёта</h2>
@@ -126,7 +126,7 @@
   <button class="primary" type="submit">Рассчитать распределение</button>
 </form>
 
-{# ---------- результат ---------- #}
+{# результат #}
 <section class="results">
   {% if result %}
   <div class="results-head">
@@ -237,7 +237,7 @@
 </section>
 </div>
 
-{# ---------- справочник ---------- #}
+{# справочник #}
 <section class="catalog">
   <div class="catalog-head">
     <h2>Справочник вкладов</h2>

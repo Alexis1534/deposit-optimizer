@@ -1,4 +1,4 @@
-"""Проверки отдельных требований ТЗ."""
+"""Проверки отдельных правил работы системы."""
 import os
 import sqlite3
 import unittest
@@ -20,7 +20,7 @@ def client():
 
 
 class NoTechnicalInfo(unittest.TestCase):
-    """ТЗ ред. 19: технические сведения о расчёте не выводятся ни на странице, ни в файле."""
+    """Технические сведения о расчёте не выводятся ни на странице, ни в файле."""
 
     def test_not_in_page_and_file(self):
         c = client()
@@ -34,7 +34,7 @@ class NoTechnicalInfo(unittest.TestCase):
 
 
 class ExactControlledByGreedy(unittest.TestCase):
-    """п. 4.1.1.4 (3): результат точного метода не уступает приближённому."""
+    """Результат точного метода не уступает приближённому."""
 
     def test_exact_not_worse(self):
         from helpers import synthetic
@@ -51,7 +51,7 @@ class InsuranceModeNames(unittest.TestCase):
 
 
 class KPlusOne(unittest.TestCase):
-    """п. 4.1.3.3: прирост при K+1 — только если K меньше числа неисключённых банков."""
+    """Прирост при K+1 — только если K меньше числа неисключённых банков."""
 
     def deps(self):
         return [dep(i, i, 12, 12, 1000, None) for i in range(1, 5)]
@@ -68,7 +68,7 @@ class KPlusOne(unittest.TestCase):
 
 
 class NonTaxableFutureMonths(unittest.TestCase):
-    """п. 4.1.2.6: для ненаступивших месяцев — последнее полученное значение ключевой ставки."""
+    """Для ненаступивших месяцев — последнее полученное значение ключевой ставки."""
 
     def test_current_year_uses_max_of_known_and_current(self):
         d = dep(1, 1, 20, 3, 1, None)
@@ -82,7 +82,7 @@ class NonTaxableFutureMonths(unittest.TestCase):
 
 
 class AvgMaxRateMissing(unittest.TestCase):
-    """п. 4.1.1.2 (5): без средней максимальной ставки проверка правдоподобия не выполняется."""
+    """Без средней максимальной ставки проверка правдоподобия не выполняется."""
 
     def test_no_marks_and_no_crash(self):
         import shutil, tempfile
@@ -99,7 +99,7 @@ class AvgMaxRateMissing(unittest.TestCase):
 
 
 class SingleDeposit(unittest.TestCase):
-    """п. 4.1.2.13: вся сумма — в один вклад; страховой лимит и предельная сумма в один банк
+    """Вся сумма — в один вклад; страховой лимит и предельная сумма в один банк
     не применяются, выводится застрахованная и незастрахованная части."""
 
     def test_whole_sum_ignores_insurance_limit(self):
@@ -137,7 +137,7 @@ class SingleDeposit(unittest.TestCase):
 
 class StepAndRemainder(unittest.TestCase):
     def test_step_notice_wording(self):
-        """п. 4.1.2.11: сообщение об округлении сумм с точностью до шага."""
+        """Сообщение об округлении сумм с точностью до шага."""
         from helpers import synthetic
         r = optimize(synthetic(500, 50), params(100_000_000, InsuranceMode.NONE, K=50, personal=99_000_000),
                      CBR, 1_400_000)
@@ -145,14 +145,14 @@ class StepAndRemainder(unittest.TestCase):
         self.assertTrue(any("округлены до" in n and "Это не ошибка" in n for n in r.notices))
 
     def test_remainder_equal_to_step_is_discretisation(self):
-        """п. 4.1.3.4: остаток, не превышающий шага, — погрешность дискретизации."""
+        """Остаток, не превышающий шага, — погрешность дискретизации."""
         r = optimize([dep(1, 1, 12, 12, 1000, None)], params(1_001_000 - 1, InsuranceMode.NONE), CBR, 1_400_000)
         self.assertLessEqual(r.remainder, r.step)
         self.assertEqual(r.remainder_reasons[0], REASON_STEP)
 
 
 class PersonalLimitReplacesInsurance(unittest.TestCase):
-    """п. 4.1.2.8, 4.6.2.4: предельная сумма в один банк заменяет режимы страхового лимита."""
+    """Предельная сумма в один банк заменяет режимы страхового лимита."""
 
     def per_bank(self, r):
         totals = {}

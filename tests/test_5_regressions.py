@@ -44,7 +44,7 @@ class LimitsLongTerms(unittest.TestCase):
 
 
 class BankLicenseIntegrity(unittest.TestCase):
-    """п. 4.2.3: заполненность и уникальность номера лицензии банка."""
+    """Заполненность и уникальность номера лицензии банка."""
 
     def catalog_with(self, sql):
         import sqlite3, tempfile, os as _os, sys as _sys
@@ -216,7 +216,7 @@ class ProgressiveTax(unittest.TestCase):
 
 
 class RemainderReasons(unittest.TestCase):
-    """Перечень причин остатка с иерархией (п. 4.1.3.4)."""
+    """Перечень причин остатка с иерархией."""
 
     def test_max_banks_and_bank_limit(self):
         deps = [dep(i, i, 12, 12, 1000, None) for i in range(1, 6)]
@@ -246,7 +246,7 @@ class RemainderReasons(unittest.TestCase):
 
 
 class SuspiciousInResult(unittest.TestCase):
-    """п. 4.1.3.2: предупреждение, если в распределение вошёл вклад с нетипично высокой ставкой."""
+    """Предупреждение, если в распределение вошёл вклад с нетипично высокой ставкой."""
 
     def test_warning_shown(self):
         app = create_app(demo_db(), online=False, today_fn=lambda: TODAY)
@@ -293,7 +293,7 @@ class KeyRateYearMax(unittest.TestCase):
 
 
 class NonTaxableCarryover(unittest.TestCase):
-    """п. 4.1.2.6: накопление неиспользованных необлагаемых сумм всех лет срока вклада."""
+    """Накопление неиспользованных необлагаемых сумм всех лет срока вклада."""
 
     def tax(self, term, cap=False, amount=3_000_000, other=0, deposits=None, today=TODAY):
         deps = deposits or [dep(1, 1, 12, term, 1, None, cap=cap)]

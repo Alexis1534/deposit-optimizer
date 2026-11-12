@@ -1,4 +1,4 @@
-"""Форматирование величин (п. 4.1.3.7) и текстовый отчёт для сохранения (п. 4.5.4)."""
+"""Форматирование сумм и текстовый отчёт для сохранения в файл."""
 from decimal import Decimal
 
 from app import clock
@@ -36,7 +36,7 @@ def rate(value) -> str:
 
 
 def single_deposit_summary(result: CalcResult, params: CalcParams, insurance_limit: int) -> dict:
-    """Показатель «Если положить всё на один вклад» (п. 4.1.2.13) — общий для страницы и файла."""
+    """Блок «Если положить всё на один вклад»; общий для страницы и файла."""
     d = result.single_best_deposit
     if d is None:
         w = result.single_widest_deposit
@@ -73,7 +73,7 @@ def single_deposit_summary(result: CalcResult, params: CalcParams, insurance_lim
 
 def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_limit: int,
                 avg_max_rate) -> str:
-    """Текстовый отчёт с результатами расчёта (п. 4.1.1.1, функция 18)."""
+    """Текстовый отчёт с результатами расчёта."""
     sp = lambda s: s.replace(NBSP, " ")
     lines = [
         "Программная система расчёта доходности и оптимизации распределения средств",
@@ -152,7 +152,7 @@ def text_report(params: CalcParams, result: CalcResult, bank_names, insurance_li
             ("Ранее полученные проценты, р.", lambda t: money(t.other_income)),
             ("Необлагаемая сумма, р.", lambda t: money(t.non_taxable)),
             ("Перенос прошлых лет, р.", lambda t: money(t.carried)),
-            ("Налоговая база, р.", lambda t: money(max(t.base, 0))),   # база не бывает отрицательной
+            ("Налоговая база, р.", lambda t: money(max(t.base, 0))),
             ("Ставка налога", lambda t: t.scale),
             ("Налог по ранее выплаченным процентам, р.", lambda t: money(t.tax_without)),
             ("Суммарный ожидаемый налог по вкладам, р.", lambda t: money(t.tax_full)),

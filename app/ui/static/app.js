@@ -1,7 +1,7 @@
 // Клиентская часть интерфейса: проверка ввода по мере заполнения, разделение разрядов,
 // кнопки «−»/«+», работа со списком банков, сортировка и отбор справочника.
 (function () {
-  // --- кнопки исключения банков
+  // кнопки исключения банков
   document.querySelectorAll("[data-banks]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var checked = btn.dataset.banks === "all";
@@ -9,9 +9,8 @@
     });
   });
 
-  // --- поле предельной суммы в один банк доступно только при отмеченном признаке (п. 4.6.2.5)
-  //     при отмеченном признаке выбор режима страхового лимита недоступен и ни один режим
-  //     не отмечен; при снятии признака восстанавливается ранее выбранный режим (п. 4.6.2.4)
+  // предельная сумма в один банк: поле доступно только при отметке, режимы лимита при ней
+  // отключены, а при снятии отметки возвращается прежний режим
   var flag = document.getElementById("personal_enabled");
   var limit = document.getElementById("personal_limit");
   var modes = document.getElementById("f-insurance_mode");
@@ -35,7 +34,7 @@
   }
 
 
-  // --- проверка вводимых значений в реальном времени (дублирует серверную проверку,
+  // проверка вводимых значений в реальном времени (дублирует серверную проверку,
   //     которая остаётся окончательной: при отключённом JavaScript всё проверит сервер)
   var form = document.querySelector("form.params");
   if (form) {
@@ -132,8 +131,7 @@
                  exclude: ["banks", "max_banks"], personal_enabled: ["personal_limit"] };
 
 
-    // --- разделение разрядов в полях денежных сумм (п. 4.6.2.12); пробелы между разрядами
-    //     сервер при проверке убирает
+    // разделение разрядов в полях сумм (сервер пробелы убирает сам)
     function groupInteger(digits) {
       return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
     }
@@ -164,7 +162,7 @@
       input.addEventListener("input", function () { regroup(input); });
     });
 
-    // --- кнопки «−» и «+» у срока размещения и предельного числа банков
+    // кнопки «−» и «+» у срока размещения и предельного числа банков
     form.querySelectorAll(".stepper button").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var input = form.elements[btn.dataset.for];
@@ -212,7 +210,7 @@
     }
   }
 
-  // --- сортировка справочника по любому столбцу
+  // сортировка справочника по любому столбцу
   var table = document.getElementById("catalog");
   if (!table) return;
   var tbody = table.tBodies[0];
@@ -234,7 +232,7 @@
     });
   });
 
-  // --- отбор по наименованию банка
+  // отбор по наименованию банка
   var filter = document.getElementById("bank-filter");
   if (filter) {
     filter.addEventListener("input", function () {
@@ -246,7 +244,7 @@
   }
 })();
 
-// --- ссылка на свёрнутый блок (например, «*» у НДФЛ): перед переходом блок раскрывается
+// ссылка на свёрнутый блок (например, «*» у НДФЛ): перед переходом блок раскрывается
 (function () {
   function openTarget(hash) {
     if (!hash || hash.length < 2) return null;
@@ -263,7 +261,7 @@
   }
 })();
 
-// --- оглавление справки: подсветка раздела, который сейчас на экране
+// оглавление справки: подсветка раздела, который сейчас на экране
 (function () {
   var toc = document.querySelector(".help-toc");
   if (!toc || !("IntersectionObserver" in window)) return;
@@ -293,7 +291,7 @@
   window.addEventListener("scroll", update, { passive: true });
 })();
 
-// --- счётчик «В расчёте: N из M банков» над списком банков
+// счётчик «В расчёте: N из M банков» над списком банков
 (function () {
   var out = document.getElementById("banks-count");
   if (!out) return;

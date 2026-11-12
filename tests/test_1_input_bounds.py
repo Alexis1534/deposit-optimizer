@@ -1,4 +1,4 @@
-"""Таблица 1 ТЗ — граничные тесты ввода."""
+"""Граничные тесты ввода."""
 import unittest
 from datetime import date
 

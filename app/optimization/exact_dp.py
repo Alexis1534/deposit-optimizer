@@ -1,30 +1,16 @@
-"""Точный метод — динамическое программирование (п. 4.1.1.4 ТЗ).
+"""Точный метод: динамическое программирование по банкам.
 
-Состояние (m, u, k): m — ячеек израсходовано всего, u — в текущем банке, k — банков
-задействовано. Вклады обрабатываются сгруппированными по банкам; при переходе к банку
-u обнуляется, k увеличивается (банк засчитывается только при u > 0).
+Состояние (m, u, k): m - ячеек израсходовано, u - в текущем банке, k - задействовано банков.
+Для каждого банка сначала строится f_b(u) - наибольший доход при размещении в нём ровно u
+ячеек (цепочка по вкладам банка, переход через скользящий максимум). Затем f_b режется на
+линейные участки, и каждый участок даёт переход главной таблицы за O(M).
 
-Реализация состояния без явного перебора u:
-  1. Внутри банка b строится функция f_b(u) — наибольший доход при размещении в банке
-     ровно u ячеек («цепочка» по вкладам банка). Переход по вкладу i:
-         F_i[u] = max(F_{i-1}[u],  c_i·h·u + max_{j ∈ [u-hi_i, u-lo_i]} (F_{i-1}[j] − c_i·h·j))
-     — это и есть линейный переход через монотонную очередь (здесь — векторизованный
-     скользящий максимум van Herk / Gil-Werman, O(длины) на вклад).
-  2. f_b разбивается на участки, на которых она линейна. На каждом участке [a, b]
-     со скатом s переход главной таблицы
-         dp_k[m] = max(dp_k[m], max_{u ∈ [a,b]} dp_{k-1}[m-u] + f_b(u))
-     сводится к тому же скользящему максимуму по m, O(M) на участок.
-  Итого O(Σ_b участков_b · M · (K+1)) вместо квадратичного перебора сумм.
+Режим "лимит вместе с процентами": для банка с малым числом вкладов область, где действует
+предел, считается перебором подмножеств вкладов. Для большого банка берутся только те u,
+при которых максимальный доход сам укладывается в предел; свободные ячейки потом
+докладываются в уже выбранные банки (_top_up).
 
-Режим 3 (лимит вместе с процентами): ограничение банка «u·h + доход ≤ лимит» касается
-самого дохода. Для банка с небольшим числом вкладов область, где предел действует,
-просчитывается перебором подмножеств вкладов. Для банка с бóльшим числом вкладов в ДП
-берутся только u, при которых наибольший доход сам укладывается в предел, — такие значения
-заведомо достижимы; затем нераспределённые ячейки докладываются в уже привлечённые банки
-до предела (_top_up). Ограничения на число вкладов в банке нет.
-
-Модуль не содержит правил начисления процентов: коэффициенты c_i получены заранее
-из подсистемы расчёта доходности и лежат в GridItem.coef.
+Правил начисления процентов здесь нет: коэффициенты вкладов приходят готовыми в GridItem.coef.
 """
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -36,21 +22,14 @@ from app.optimization.grid import Grid, GridBank
 NEG = -1e18
 NEG_HALF = -5e17
 TOL = 1e-6
-# Режим 3: у банка с числом вкладов не больше EXACT_SUBSET_MAX область действия предела
-# «вложено + проценты» просчитывается перебором подмножеств вкладов (2^n). Доход у предела
-# при этом достигается с точностью до разброса ставок банка на один шаг — меньше дохода
-# одного шага, в пределах погрешности п. 4.1.2.10. Порог ограничивает время перебора
-# рамками п. 4.1.3.5 (2 с на расчёт).
+# Банки с числом вкладов до EXACT_SUBSET_MAX считаются перебором подмножеств (2^n);
+# порог не даёт перебору затянуть расчёт.
 EXACT_SUBSET_MAX = 6
-SUBSET_OVERHEAD = 3000   # накладные расходы на одно подмножество в единицах объёма
+SUBSET_OVERHEAD = 3000   # накладные расходы на одно подмножество, в единицах объёма
 
 
-# ----------------------------------------------------------- скользящий максимум
 def sliding_max(z: np.ndarray, w: int) -> np.ndarray:
-    """Максимум в окне ширины w по последней оси (алгоритм van Herk / Gil-Werman).
-
-    Возвращает массив длины n − w + 1. Время O(n), без цикла Python по элементам.
-    """
+    """Максимум в окне ширины w по последней оси (van Herk / Gil-Werman)."""
     if w == 1:
         return z
     n = z.shape[-1]
@@ -65,7 +44,7 @@ def sliding_max(z: np.ndarray, w: int) -> np.ndarray:
 
 def window_transition(src: np.ndarray, a: int, b: int, slope: float, fa: float,
                       idx: np.ndarray) -> np.ndarray:
-    """cand[m] = max_{u∈[a,b], u≤m} src[m−u] + fa + slope·(u−a); для m < a — NEG."""
+    """cand[m] = max по u из [a, b] от src[m-u] + fa + slope*(u-a); для m < a - NEG."""
     n = src.shape[-1]
     cand = np.full(src.shape, NEG)
     if a > n - 1:
@@ -80,14 +59,13 @@ def window_transition(src: np.ndarray, a: int, b: int, slope: float, fa: float,
     return cand
 
 
-# ------------------------------------------------------------ функция банка
 @dataclass
 class BankFunction:
     bank: GridBank
-    f: np.ndarray                          # f(u), u = 0..L; NEG — недостижимо
-    chain: List[np.ndarray]                # слои цепочки F_0..F_n (для восстановления)
-    subset_used: Optional[np.ndarray]      # режим 3, малый банк: маска подмножества для u
-    runs: List[Tuple[int, int, float, float]]   # участки линейности (a, b, скат, f(a))
+    f: np.ndarray                          # f(u), u = 0..L; NEG - недостижимо
+    chain: List[np.ndarray]                # слои цепочки по вкладам, для восстановления
+    subset_used: Optional[np.ndarray]      # маска подмножества вкладов для u (малые банки)
+    runs: List[Tuple[int, int, float, float]]   # линейные участки (a, b, наклон, f(a))
     h: int                                 # шаг сетки, руб.
 
     @property
@@ -109,7 +87,7 @@ def _chain(bank: GridBank, L: int, h: int):
 
 
 def _subset_curves(items, mask, L, h):
-    """Для подмножества вкладов: диапазон u и доходы заполнения «от дорогих» и «от дешёвых»."""
+    """Диапазон u подмножества и доход при заполнении от дорогих и от дешёвых вкладов."""
     chosen = [it for k, it in enumerate(items) if mask >> k & 1]
     lo_s = sum(it.lo for it in chosen)
     hi_s = min(sum(it.hi for it in chosen), L)
@@ -133,7 +111,7 @@ def _subset_curves(items, mask, L, h):
 
 
 def _subset_function(bank: GridBank, L: int, h: int, binding: np.ndarray):
-    """Точное значение f(u) в области действия предела — перебором подмножеств вкладов."""
+    """f(u) там, где действует предел, перебором подмножеств вкладов."""
     f3 = np.full(L + 1, NEG)
     used = np.zeros(L + 1, dtype=np.int64)
     for mask in range(1, 1 << len(bank.items)):
@@ -161,26 +139,23 @@ def build_bank_function(bank: GridBank, M: int, h: int) -> BankFunction:
         allowed = bank.bound_rub - u * h           # предел дохода при u ячейках
         binding = reachable & (f > allowed + TOL)
         if binding.any():
-            # Ограничение «вложено + проценты ≤ лимита» касается самого дохода: при u
-            # ячейках доход не должен превышать allowed(u).
             if len(bank.items) <= EXACT_SUBSET_MAX:
                 f3, subset_used = _subset_function(bank, L, h, binding)
                 f = np.where(binding, f3, f)
             else:
-                # большой банк: берутся только u, при которых наибольший доход сам
-                # укладывается в предел, — такие значения заведомо достижимы
+                # большой банк: оставляем только u, где максимальный доход укладывается в предел
                 f = np.where(binding, NEG, f)
 
     return BankFunction(bank, f, layers, subset_used, _runs(f), h)
 
 
 def _runs(f: np.ndarray) -> List[Tuple[int, int, float, float]]:
-    """Разбиение f(u), u ≥ 1, на участки линейности (векторно)."""
+    """Разбиение f(u), u >= 1, на линейные участки."""
     L = len(f) - 1
     if L < 1:
         return []
     fin = f > NEG_HALF
-    fin[0] = False                       # u = 0 — «банк не задействован», отдельный переход
+    fin[0] = False                       # u = 0: банк не используется
     s = np.zeros(L + 1)
     ok = fin[1:] & fin[:-1]
     s[1:][ok] = f[1:][ok] - f[:-1][ok]
@@ -212,9 +187,8 @@ def linearized(bf: BankFunction) -> np.ndarray:
     return g
 
 
-# ---------------------------------------------------------------- оценка объёма
 def volume(bank_functions: List[BankFunction], M: int, K: int) -> Tuple[int, int]:
-    """Оценка объёма вычислений (элементарных векторных операций) и памяти (байт)."""
+    """Оценка объёма вычислений и памяти (байт)."""
     rows = K + 1 if K < len(bank_functions) else 1
     work = sum(len(bf.runs) for bf in bank_functions) * rows * (M + 1)
     memory = (len(bank_functions) + 1) * rows * (M + 1) * 8
@@ -222,7 +196,7 @@ def volume(bank_functions: List[BankFunction], M: int, K: int) -> Tuple[int, int
 
 
 def bank_function_cost(grid: Grid) -> int:
-    """Оценка объёма построения функций банков (цепочки и перебор подмножеств режима 3)."""
+    """Оценка объёма построения функций банков."""
     cost = 0
     for b in grid.banks:
         L = min(grid.cells, b.cap_cells)
@@ -232,7 +206,6 @@ def bank_function_cost(grid: Grid) -> int:
     return cost
 
 
-# --------------------------------------------------------------------- решение
 @dataclass
 class ExactSolution:
     value: float
@@ -241,9 +214,9 @@ class ExactSolution:
 
 
 def solve(bank_functions: List[BankFunction], M: int, K: int) -> ExactSolution:
-    """Главная таблица ДП по банкам с учётом предельного числа банков K."""
+    """Главная таблица ДП по банкам с ограничением на число банков K."""
     B = len(bank_functions)
-    use_k = K < B                    # иначе ограничение по числу банков не действует
+    use_k = K < B                    # иначе ограничение на число банков не действует
     rows = K + 1 if use_k else 1
     idx = np.arange(M + 1, dtype=float)
     dp = np.full((rows, M + 1), NEG)
@@ -269,7 +242,7 @@ def solve(bank_functions: List[BankFunction], M: int, K: int) -> ExactSolution:
     k_best, m_best = np.unravel_index(int(np.argmax(dp)), dp.shape)
     value = float(dp[k_best, m_best])
 
-    # ---- восстановление решения: банк за банком в обратном порядке
+    # восстановление решения с последнего банка
     alloc, banks_used = [], 0
     k, m = int(k_best), int(m_best)
     for b in range(B - 1, -1, -1):
@@ -297,13 +270,10 @@ def solve(bank_functions: List[BankFunction], M: int, K: int) -> ExactSolution:
 
 
 def _top_up(bank_functions: List[BankFunction], alloc: List[Tuple[object, int]], M: int):
-    """Режим 3: докладывание нераспределённых ячеек в уже привлечённые банки до предела.
+    """Докладывает свободные ячейки в уже выбранные банки, пока не упрёмся в предел.
 
-    Для банков с большим числом вкладов ДП берёт только значения, где наибольший доход
-    сам укладывается в предел «вложено + проценты», поэтому у предела может остаться запас.
-    Нераспределённые ячейки докладываются в вклады этих банков, начиная с наиболее
-    доходного, пока запас позволяет. Каждое добавление увеличивает доход и не нарушает
-    ни одного ограничения; новые банки не привлекаются (число банков не меняется).
+    Нужно для больших банков в режиме "вложено + проценты": ДП оставляет у предела запас.
+    Сначала пополняются самые доходные вклады; новые банки не добавляются.
     """
     cells = {id(it): c for it, c in alloc}
     by_id = {id(it): it for it, _ in alloc}
@@ -325,7 +295,7 @@ def _top_up(bank_functions: List[BankFunction], alloc: List[Tuple[object, int]],
             room = min(it.hi - have, bank.cap_cells - used, free,
                        int((bank.bound_rub - with_interest + TOL) // (h * (1 + it.coef))))
             if have == 0 and room < it.lo:
-                continue                      # новый вклад открывается только с минимума
+                continue                      # новый вклад - только от минимальной суммы
             if room <= 0:
                 continue
             cells[id(it)] = have + room
@@ -337,7 +307,7 @@ def _top_up(bank_functions: List[BankFunction], alloc: List[Tuple[object, int]],
 
 
 def _split_bank(bf: BankFunction, u: int) -> List[Tuple[object, int]]:
-    """Распределение u ячеек между вкладами банка."""
+    """Раскладывает u ячеек по вкладам банка."""
     items = bf.bank.items
     if bf.subset_used is not None and bf.subset_used[u]:
         return _split_subset(bf, u, int(bf.subset_used[u]))
@@ -359,7 +329,7 @@ def _split_bank(bf: BankFunction, u: int) -> List[Tuple[object, int]]:
 
 
 def _split_subset(bf: BankFunction, u: int, mask: int) -> List[Tuple[object, int]]:
-    """Режим 3, малый банк: распределение подмножества, доведённое до предела банка."""
+    """Раскладка для подмножества вкладов с доводкой до предела банка."""
     h = bf.h
     chosen = [it for k, it in enumerate(bf.bank.items) if mask >> k & 1]
     alloc = {id(it): it.lo for it in chosen}
@@ -371,7 +341,7 @@ def _split_subset(bf: BankFunction, u: int, mask: int) -> List[Tuple[object, int
     income = sum(it.coef * h * alloc[id(it)] for it in chosen)
     limit = bf.bank.bound_rub - u * h
     asc = sorted(chosen, key=lambda x: x.coef)
-    for hi_it in reversed(asc):                            # перенос к более доходным вкладам
+    for hi_it in reversed(asc):                            # переносим к более доходным
         for lo_it in asc:
             if lo_it.coef >= hi_it.coef:
                 break

@@ -2,7 +2,7 @@
 
 Запуск из корня проекта:
     python tools/init_db.py           — создать database/deposits.db, если его нет
-    python tools/init_db.py --force   — пересоздать (перед этим сделайте копию файла, п. 4.3.2)
+    python tools/init_db.py --force   — пересоздать (сначала сохраните копию файла)
 """
 import os
 import sqlite3

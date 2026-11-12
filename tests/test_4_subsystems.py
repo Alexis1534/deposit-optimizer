@@ -82,7 +82,7 @@ class Income(unittest.TestCase):
         self.assertAlmostEqual(calc.income_coefficient(d, date(2026, 9, 16)), f, places=12)
 
     def test_capitalization_income_split_by_year(self):
-        """п. 4.1.2.6: проценты вклада с капитализацией относятся к годам начисления."""
+        """Проценты вклада с капитализацией относятся к годам начисления."""
         d = dep(1, 1, 12, 6, 1, None, cap=True)      # 16.09.2026 → 16.03.2027
         pos = calc.build_positions([(d, 1_000_000)], calc.coefficients([d], date(2026, 9, 16)),
                                    date(2026, 9, 16))[0]
@@ -97,7 +97,7 @@ class Income(unittest.TestCase):
         self.assertEqual(pos.income_by_year, {2027: pos.income})
 
     def test_tax_is_increment_only(self):
-        """п. 4.1.2.6: выводится НДФЛ, приходящийся на доход по вкладам."""
+        """Выводится НДФЛ, приходящийся на доход по вкладам."""
         d = dep(1, 1, 20, 3, 1, None)                # доход в текущем году
         pos = calc.build_positions([(d, 2_000_000)], calc.coefficients([d], date(2026, 9, 16)),
                                    date(2026, 9, 16))
@@ -137,7 +137,7 @@ class CbrCache(unittest.TestCase):
         self.assertEqual(info.key_rate_current, 14.0)
 
     def test_suspicious(self):
-        from app.data_management.repository import is_suspicious   # п. 4.2.4 — управление данными
+        from app.data_management.repository import is_suspicious
         self.assertTrue(is_suspicious(17.5, 12.948))
         self.assertFalse(is_suspicious(15.2, 12.948))
 

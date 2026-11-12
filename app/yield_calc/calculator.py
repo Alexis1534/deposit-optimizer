@@ -1,11 +1,4 @@
-"""Подсистема расчёта доходности (п. 4.1.1.3 ТЗ).
-
-Содержит все правила начисления процентов, расчёта НДФЛ и определения застрахованной
-части. Подсистема оптимизации этих правил не содержит и обращается сюда:
-  * до поиска — за коэффициентом доходности каждого вклада;
-  * после поиска — с выбранным распределением за налогом и итогами.
-Модуль не хранит состояния: все данные приходят параметрами.
-"""
+"""Расчёт доходности: проценты, НДФЛ, застрахованная часть. Состояния не хранит."""
 import calendar
 from collections import defaultdict
 from datetime import date, timedelta
@@ -16,17 +9,15 @@ from app.models import Deposit, Position, TaxYear
 
 KOPECK = Decimal("0.01")
 NON_TAXABLE_BASE = Decimal("1000000")
-# Шкала НДФЛ для отдельной налоговой базы по процентам (с 2025 г.):
-# 13 % в пределах порога и 15 % с суммы превышения. Пятиступенчатая шкала
-# (13/15/18/20/22 %) к процентам по вкладам не применяется — она для основной базы.
+# Шкала НДФЛ для процентов по вкладам: 13 % до порога и 15 % с суммы сверх него
+# (пятиступенчатая шкала относится к основной базе и сюда не применяется).
 NDFL_THRESHOLD = Decimal("2400000")
 NDFL_RATE_BASE = Decimal("0.13")
 NDFL_RATE_HIGH = Decimal("0.15")
 
 
-# --------------------------------------------------------------------------- даты
 def add_months(d: date, months: int) -> date:
-    """Дата через заданное число месяцев; день ограничивается длиной месяца (31.01 + 1 = 28/29.02)."""
+    """Дата через заданное число месяцев; день обрезается до длины месяца (31.01 + 1 мес. = 28.02)."""
     y, m = divmod(d.month - 1 + months, 12)
     year, month = d.year + y, m + 1
     return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
@@ -40,11 +31,10 @@ DAY = timedelta(days=1)
 
 
 def _year_fraction(d1: date, d2: date) -> float:
-    """Σ дней / длина года по каждому календарному году отдельно (365 или 366, п. 4.1.2.5).
+    """Сумма дней / длина года по каждому календарному году (365 или 366).
 
-    Проценты начисляются со дня, следующего за днём поступления вклада, по день возврата
-    включительно (п. 1 ст. 839 ГК РФ), то есть за дни периода (d1, d2]. Период, пересекающий
-    Новый год, делится по годам: 31 декабря относится к уходящему году, 1 января — к новому.
+    Считаются дни периода (d1, d2]: день открытия не входит, день окончания входит
+    (ст. 839 ГК РФ). Период через Новый год делится по годам.
     """
     total = 0.0
     cur, d2 = d1 + DAY, d2 + DAY          # (d1, d2] == [d1 + 1, d2 + 1)
@@ -57,15 +47,11 @@ def _year_fraction(d1: date, d2: date) -> float:
     return total
 
 
-# ------------------------------------------------------------ доход по вкладу
 def income_coefficient(deposit: Deposit, start: date) -> float:
-    """Доход на 1 рубль вложений за весь срок (без округления).
+    """Доход на 1 рубль вложений за весь срок, без округления.
 
-    Доход линейно пропорционален сумме, поэтому коэффициент считается один раз до
-    оптимизации.
-      * без капитализации — простые проценты: r · Σ(дни_года / длина_года);
-      * с капитализацией — ежемесячное начисление с фактическим числом дней каждого
-        месяца: ∏(1 + r · доля_года_месяца) − 1.
+    Без капитализации: r * сумма(дни / длина года). С капитализацией: проценты
+    начисляются каждый месяц, итог - произведение (1 + r * доля года) минус 1.
     """
     r = deposit.rate / 100.0
     finish = end_date(start, deposit.term_months)
@@ -80,12 +66,10 @@ def income_coefficient(deposit: Deposit, start: date) -> float:
 
 
 def income_by_year(deposit: Deposit, amount: int, total: Decimal, start: date) -> Dict[int, Decimal]:
-    """Распределение дохода позиции по календарным годам (п. 4.1.2.6).
+    """Доход позиции по календарным годам.
 
-    Без капитализации доход относится к году окончания срока: проценты выплачиваются
-    в конце. С капитализацией проценты относятся к годам, в которых они фактически
-    капитализированы: сумма процентов, капитализированных в течение года, — доход этого года.
-    Сумма по годам совпадает с доходом позиции: последний год принимает разницу округления.
+    Без капитализации всё относится к году окончания срока. С капитализацией - к годам,
+    в которых проценты начислены; последний год забирает разницу округления.
     """
     finish = end_date(start, deposit.term_months)
     if not deposit.capitalization:
@@ -104,28 +88,28 @@ def income_by_year(deposit: Deposit, amount: int, total: Decimal, start: date) -
     for year in years[:-1]:
         result[year] = round_money(parts[year])
         used += result[year]
-    result[years[-1]] = total - used            # остаток, чтобы сумма совпала с доходом позиции
+    result[years[-1]] = total - used            # чтобы сумма совпала с доходом позиции
     return result
 
 
 def coefficients(deposits: List[Deposit], start: date) -> Dict[int, float]:
-    """Коэффициенты доходности для списка вкладов: {deposit_id: доход на 1 рубль}."""
+    """Коэффициенты доходности вкладов: {deposit_id: доход на 1 рубль}."""
     return {d.deposit_id: income_coefficient(d, start) for d in deposits}
 
 
 def round_money(value) -> Decimal:
-    """Округление до копеек по правилам математического округления."""
+    """Округление до копеек (половина вверх)."""
     return Decimal(str(value)).quantize(KOPECK, rounding=ROUND_HALF_UP)
 
 
 def position_income(amount: int, coefficient: float) -> Decimal:
-    """Доход по позиции распределения, округлённый до копеек."""
+    """Доход по позиции, округлённый до копеек."""
     return round_money(amount * coefficient)
 
 
 def build_positions(allocation: List[Tuple[Deposit, int]], coefs: Dict[int, float],
                     start: date) -> List[Position]:
-    """Оценка выбранного распределения: доход и дата окончания по каждой позиции."""
+    """Позиции распределения с доходом и датой окончания."""
     result = []
     for dep, amount in allocation:
         if amount <= 0:
@@ -137,19 +121,15 @@ def build_positions(allocation: List[Tuple[Deposit, int]], coefs: Dict[int, floa
     return result
 
 
-# --------------------------------------------------------------------- НДФЛ
-CARRYOVER_MIN_TERM = 15        # перенос действует для вкладов дольше 15 месяцев
+CARRYOVER_MIN_TERM = 15        # перенос только для вкладов дольше 15 месяцев
 
 
 def carryover_caps(deposit: Deposit, amount: int, start: date) -> Dict[int, Decimal]:
-    """Пределы переноса по одному вкладу (п. 4.1.2.6 ТЗ, п. 1 ст. 214.2 НК): проценты, фактически
-    начисленные за каждый календарный год срока, предшествующий году завершения.
+    """Пределы переноса необлагаемой суммы по вкладу: {год-источник: предел}.
 
-    Для года-источника предел = сумма × ставка × (дни начисления в этом году ÷ длина этого года);
-    дни начисления — со дня, следующего за открытием, по день окончания включительно (ст. 839 ГК).
-    Неиспользованная необлагаемая сумма такого года может быть перенесена в год завершения
-    срока, но не более этой величины. Пустой словарь — вклад под правило не подпадает
-    (капитализация процентов или срок не больше 15 месяцев).
+    Предел года = сумма * ставка * дни начисления в году / длина года, то есть проценты,
+    фактически начисленные за этот год. Пустой словарь, если вклад с капитализацией или
+    срок не больше 15 месяцев.
     """
     if deposit.capitalization or deposit.term_months <= CARRYOVER_MIN_TERM:
         return {}
@@ -158,7 +138,7 @@ def carryover_caps(deposit: Deposit, amount: int, start: date) -> Dict[int, Deci
     first = start + DAY                       # первый день начисления
     caps = {}
     for year in range(first.year, finish.year):
-        # дни начисления, приходящиеся на год: (max(start, 31.12 пред. года), min(finish, 31.12 года)]
+        # дни начисления в году: (max(start, 31.12 пред. года), min(finish, 31.12 года)]
         year_from = max(start, date(year, 1, 1) - DAY)
         year_to = min(finish, date(year, 12, 31))
         if year_to > year_from:
@@ -176,41 +156,30 @@ def _tax_on(base: Decimal) -> Tuple[Decimal, Decimal]:
 
 def compute_tax(positions: List[Position], other_income, calc_date: date,
                 key_rate_current: float, key_rate_year_max: Dict[int, float]):
-    """Оценочная величина НДФЛ (п. 4.1.2.6 ТЗ).
+    """Оценка НДФЛ по годам. Возвращает (список TaxYear, НДФЛ на распределение).
 
-    * доход позиции относится к годам по правилам income_by_year;
-    * необлагаемая сумма = 1 000 000 × наибольшая ключевая ставка на 1-е число месяцев года
-      (п. 1 ст. 214.2 НК РФ); для месяцев, не наступивших на дату расчёта, — последнее
-      полученное значение;
-    * база текущего года увеличивается на процентный доход по вкладам вне расчёта;
-    * для вклада без капитализации со сроком больше 15 месяцев неиспользованные части
-      необлагаемых сумм всех лет срока размещения накапливаются и уменьшают базу года
-      завершения срока; вклад берёт из каждого такого года не больше процентов, фактически
-      начисленных за этот год; накопленный остаток года, не израсходованный вкладами,
-      остаётся доступным для более поздних лет завершения;
-    * налог: 13 % с базы в пределах 2 400 000 р. и 15 % с части сверх этого значения;
-    * пользователю выводится НДФЛ, приходящийся на доход по вкладам: разность
-      между налогом с учётом этого дохода и налогом без него.
-    Возвращает (список TaxYear, НДФЛ на распределение в целом).
+    Необлагаемая сумма года - 1 000 000 * наибольшая ключевая ставка на 1-е число месяцев
+    года. К базе текущего года добавляется other_income. Неиспользованные необлагаемые
+    суммы лет, прошедших до окончания длинного вклада без капитализации, переносятся
+    в год окончания (в пределах carryover_caps). Выводится не весь налог, а разность
+    налога с вкладами и без них.
     """
     by_year = defaultdict(lambda: Decimal("0"))
     for p in positions:
         for year, part in p.income_by_year.items():
             by_year[year] += part
     current_year = calc_date.year
-    by_year.setdefault(current_year, Decimal("0"))   # текущий год показывается всегда
+    by_year.setdefault(current_year, Decimal("0"))   # текущий год показываем всегда
 
-    # пределы переноса: {год завершения: {год-источник: предел}} по всем подпадающим вкладам
+    # пределы переноса: {год окончания: {год-источник: предел}}
     caps = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
     for p in positions:
         for source, cap in carryover_caps(p.deposit, p.amount, calc_date).items():
             caps[p.end_date.year][source] += cap
-            by_year.setdefault(source, Decimal("0"))                # год-источник переноса
+            by_year.setdefault(source, Decimal("0"))
 
     def non_taxable_for(year):
-        # наибольшая ставка на 1-е число месяцев года; для месяцев, не наступивших на дату
-        # расчёта, принимается последнее полученное значение (п. 4.1.2.6), поэтому для
-        # текущего года — максимум из уже известных значений и текущей ставки, для будущих — текущая
+        # для месяцев, которые ещё не наступили, берётся текущая ставка
         if year == current_year:
             rate = max(key_rate_year_max.get(year, key_rate_current), key_rate_current)
         else:
@@ -218,13 +187,13 @@ def compute_tax(positions: List[Position], other_income, calc_date: date,
         return round_money(NON_TAXABLE_BASE * Decimal(str(rate)) / 100)
 
     years, total = [], Decimal("0")
-    pool = {}                       # {год-источник: неизрасходованный остаток необлагаемой суммы}
+    pool = {}                       # {год: неиспользованный остаток необлагаемой суммы}
     for year in sorted(by_year):
         non_taxable = non_taxable_for(year)
         other = Decimal(str(other_income)) if year == current_year else Decimal("0")
         income_of_year = by_year[year] + other
 
-        # накопленные остатки прошлых лет расходуются от ранних к поздним
+        # остатки прошлых лет тратим от ранних к поздним
         carried = Decimal("0")
         for source in sorted(pool):
             if source >= year:
@@ -234,11 +203,10 @@ def compute_tax(positions: List[Position], other_income, calc_date: date,
                 pool[source] -= take
                 caps[year][source] -= take
                 carried += take
-        # остаток необлагаемой суммы этого года пополняет накопление
         pool[year] = max(non_taxable - income_of_year, Decimal("0"))
         base = income_of_year - non_taxable - carried
         tax_with, high = _tax_on(base)
-        tax_without, _ = _tax_on(other - non_taxable)     # налог, если бы вкладов не было
+        tax_without, _ = _tax_on(other - non_taxable)     # налог без вкладов
         increment = tax_with - tax_without
         years.append(TaxYear(year, by_year[year], other, non_taxable, base, increment,
                              high_part=high, scale="13 %" if high == 0 else "13 % / 15 %",
@@ -247,13 +215,10 @@ def compute_tax(positions: List[Position], other_income, calc_date: date,
     return years, total
 
 
-# ---------------------------------------------- застрахованная часть средств
 def insured_split(positions: List[Position], insurance_limit: int) -> Tuple[Decimal, Decimal]:
-    """Застрахованная и незастрахованная суммы на конец срока — вклад вместе с процентами.
+    """Застрахованная и незастрахованная суммы на конец срока (вклад с процентами).
 
-    Страховое возмещение выплачивается по вкладу с начисленными процентами в пределах
-    лимита на один банк, поэтому проценты, умещающиеся в лимит, тоже застрахованы.
-    Считается по каждому банку: min(вложено + проценты, лимит).
+    По каждому банку застраховано min(вложено + проценты, лимит).
     """
     per_bank = defaultdict(Decimal)
     for p in positions:

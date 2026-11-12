@@ -1,8 +1,4 @@
-"""Контроль вводимой информации (п. 4.2.1, 4.2.2 ТЗ; таблица 1 тестов).
-
-При ошибке расчёт не выполняется, сообщение указывает поле и характер ошибки,
-введённые значения сохраняются (форма перерисовывается с исходными строками).
-"""
+"""Проверка введённых значений. При ошибке расчёт не запускается, форма показывается заново."""
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -14,7 +10,7 @@ from app.models import CalcParams, InsuranceMode
 AMOUNT_MIN, AMOUNT_MAX = 1_000, 100_000_000
 TERM_MIN, TERM_MAX = 1, 18
 PERSONAL_MIN = 1_000
-OTHER_INCOME_MAX = Decimal("1000000000")   # 1 млрд р.; граница выбрана разработчиком
+OTHER_INCOME_MAX = Decimal("1000000000")   # 1 млрд р.
 _MONEY_RE = re.compile(r"^\d+(?:[.,]\d{1,2})?$")
 
 FIELD_NAMES = {
@@ -31,7 +27,7 @@ FIELD_NAMES = {
 
 @dataclass
 class FormState:
-    """Введённые пользователем значения в исходном виде — для повторного показа формы."""
+    """Введённые значения в исходном виде, чтобы показать форму повторно."""
     amount: str = ""
     term_from: str = "1"
     term_to: str = "18"
@@ -54,9 +50,9 @@ _NUMBER_RE = re.compile(r"([\d \u00a0]+)([.,]\d*)?")
 
 
 def _without_leading_zeros(raw: str) -> str:
-    """Убирает незначащие нули в начале числа: «007» → «7», «0 001 000» → «1 000», «00,50» → «0,50».
+    """Убирает нули в начале числа: «007» -> «7», «0 001 000» -> «1 000», «00,50» -> «0,50».
 
-    Значение, не похожее на число, возвращается без изменений: его отметит проверка.
+    То, что не похоже на число, возвращается как есть: его отметит проверка.
     """
     m = _NUMBER_RE.fullmatch(raw)
     if not m:
@@ -77,8 +73,8 @@ def form_from_request(form) -> FormState:
         term_to=_without_leading_zeros(form.get("term_to", "").strip()),
         excluded=frozenset(excluded),
         max_banks=_without_leading_zeros(form.get("max_banks", "").strip()),
-        # при отмеченной предельной сумме в один банк выбор режима недоступен (п. 4.6.2.4),
-        # и ранее выбранный режим приходит скрытым полем, чтобы восстановить его при снятии признака
+        # при отмеченной предельной сумме выбор режима недоступен; прежний режим приходит
+        # скрытым полем и восстанавливается при снятии отметки
         insurance_mode=(form.get("insurance_mode") or form.get("insurance_mode_saved", "")).strip(),
         personal_enabled=form.get("personal_enabled") == "on",
         personal_limit=_without_leading_zeros(form.get("personal_limit", "").strip()),
@@ -87,7 +83,7 @@ def form_from_request(form) -> FormState:
 
 
 def _parse_int(raw: str) -> Optional[int]:
-    """Целое число; допускаются пробелы между разрядами. None — неверный числовой формат."""
+    """Целое число (пробелы между разрядами допустимы) или None."""
     s = raw.replace(" ", "").replace("\u00a0", "")
     if not s or not s.isdigit():
         return None
@@ -95,7 +91,7 @@ def _parse_int(raw: str) -> Optional[int]:
 
 
 def _parse_money(raw: str) -> Optional[Decimal]:
-    """Сумма в рублях с копейками: 1500, 1 500, 1500,5, 1500.50. None — неверный формат."""
+    """Сумма в рублях с копейками: 1500, 1 500, 1500,5, 1500.50, или None."""
     s = raw.replace(" ", "").replace("\u00a0", "")
     if not _MONEY_RE.match(s):
         return None
@@ -143,7 +139,7 @@ def validate(state: FormState, all_bank_ids: List[int], today: date) -> Validati
     if state.insurance_mode in {str(int(m)) for m in InsuranceMode}:
         mode = InsuranceMode(int(state.insurance_mode))
     elif state.personal_enabled:
-        mode = InsuranceMode.PRINCIPAL      # режимы не применяются (п. 4.1.2.8)
+        mode = InsuranceMode.PRINCIPAL      # при личном лимите режим не используется
     else:
         errors["insurance_mode"] = "режим не выбран"
 

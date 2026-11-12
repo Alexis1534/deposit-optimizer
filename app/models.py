@@ -1,9 +1,7 @@
-"""Структуры данных, которыми обмениваются подсистемы (связи по данным, п. 5.4.6 ТЗ).
+"""Структуры данных, которыми обмениваются части программы.
 
-«Банк» и «Вклад» — отображение записей таблиц БД.
-«Параметры расчёта», «Результат расчёта», «Позиция распределения» — структуры данных
-сеанса в оперативной памяти (п. 4.1.2.12), в БД не сохраняются.
-Модуль не содержит логики и не хранит состояния.
+Bank и Deposit соответствуют записям БД; параметры, результат и позиции живут только
+в памяти сеанса и в БД не сохраняются. Логики в модуле нет.
 """
 from dataclasses import dataclass, field
 from datetime import date
@@ -13,7 +11,7 @@ from typing import Dict, List, Optional
 
 
 class InsuranceMode(IntEnum):
-    """Режим учёта предельного размера страхового возмещения (п. 4.1.2.7)."""
+    """Режим учёта предельного размера страхового возмещения."""
     NONE = 1            # не учитывается
     PRINCIPAL = 2       # вложенная сумма в одном банке не превышает лимита (по умолчанию)
     WITH_INTEREST = 3   # вложенная сумма вместе с процентами не превышает лимита
@@ -25,7 +23,7 @@ class Deposit:
     deposit_id: int
     bank_id: int
     bank_name: str
-    bank_license: str              # справочник содержит только банки — участники ССВ (п. 4.1.2.1)
+    bank_license: str              # справочник содержит только банки — участники ССВ
     name: str
     rate: float                    # % годовых
     term_months: int
@@ -37,14 +35,14 @@ class Deposit:
 
 @dataclass(frozen=True)
 class IntegrityIssue:
-    """Нарушение целостности справочника (п. 4.2.3)."""
+    """Нарушение целостности справочника."""
     record: str
     problem: str
 
 
 @dataclass
 class CbrInfo:
-    """Сведения Банка России (п. 4.1.1.5)."""
+    """Сведения Банка России."""
     key_rate_current: float
     key_rate_as_of: str
     key_rate_year_max: Dict[int, float]
@@ -56,7 +54,7 @@ class CbrInfo:
 
 @dataclass
 class CalcParams:
-    """Параметры расчёта (п. 4.1.2.3)."""
+    """Параметры расчёта."""
     amount: int
     term_from: int
     term_to: int
@@ -71,7 +69,7 @@ class CalcParams:
 
 @dataclass
 class Position:
-    """Позиция распределения (п. 4.1.3.1)."""
+    """Позиция распределения."""
     deposit: Deposit
     amount: int
     income: Decimal                         # доход по позиции, округлён до копеек
@@ -101,12 +99,12 @@ class TaxYear:
     tax_full: Decimal = Decimal("0")      # налог за год с учётом дохода по вкладам
     tax_without: Decimal = Decimal("0")   # налог за год без дохода по вкладам
     carried: Decimal = Decimal("0")       # перенос необлагаемой суммы с предшествующего года
-    # поле tax — НДФЛ, приходящийся на доход по вкладам (п. 4.1.2.6)
+    # поле tax — НДФЛ, приходящийся на доход по вкладам
 
 
 @dataclass
 class CalcResult:
-    """Результат расчёта (п. 4.1.3.2–4.1.3.4)."""
+    """Результат расчёта."""
     exact: MethodResult
     approx: MethodResult
     tax_years: List[TaxYear]
